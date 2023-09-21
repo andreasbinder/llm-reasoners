@@ -72,7 +72,7 @@ def rap_gsm8k(base_model: LanguageModel,
     # dataset = load_dataset("gsm8k", "main", split=f'test[{resume}:]')
     dataset = [{
         "question" : "How much longer is the Nevezis than the A1 Kaunas-Klaipeda highway?",
-        "example" : "14"
+        "answer" : "14"
     }]
 
     correct_count = 0
