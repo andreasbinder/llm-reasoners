@@ -1,6 +1,102 @@
 import re
 from typing import Optional, Union
 
+import io
+
+def create_vector_store(path):
+    from langchain.document_loaders import JSONLoader
+
+    loader = JSONLoader(
+        file_path=path,
+        # jq_schema='.[0].txt_posFacts[].fact, .[0].txt_negFacts[].fact', #.txt_posFacts[].fact +
+        jq_schema='.[0].txt_posFacts[], .[0].txt_negFacts[]',
+        content_key="fact",
+        text_content=True,
+    )
+    documents = loader.load()
+    # TODO add label if correct source
+    # loop and manually add label
+
+    from langchain.embeddings import HuggingFaceEmbeddings
+    from langchain.vectorstores import FAISS
+
+    model_name = "sentence-transformers/all-mpnet-base-v2"
+    model_kwargs = {"device": "cuda"}
+
+    embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
+
+    # storing embeddings in the vector store
+    vectorstore = FAISS.from_documents(documents, embeddings)
+
+    return vectorstore
+
+    
+
+def action_selection(prompt, example, state):
+    with io.StringIO() as f:
+        f.write(prompt["action_selection"]["description"] + "\n") 
+
+        # give overall question
+        f.write(prompt["general"]["prefix_main"] + example + "\n") 
+
+        # write action descriptions
+        f.write(prompt["action_selection"]["options"] + "\n") 
+        for idx, a in enumerate(prompt["actions"]):
+            f.write(a + ": " + prompt["actions"][a]["description"] + "\n")
+
+        # write history
+        # only write if history exists
+        if state != []:
+            f.write(prompt["action_selection"]["history"] + "\n") 
+            for idx, a in enumerate(prompt["actions"]):
+                # do not print action with no history
+                if any(type(s).__name__ == a for s in state):
+                    f.write(a + ": " + "\n")
+                    for idx, s in enumerate(state):
+                        if a == type(s).__name__:
+                            f.write(s[0] + " "+ s[1] + "\n")
+
+        # output format
+        f.write(prompt["action_selection"]["output_format"] + "\n") 
+        model_input = f.getvalue()
+    return model_input
+
+def execute_action(prompt, example, state, action):
+    
+    with io.StringIO() as g:
+        g.write(prompt["actions"][action]["description"] + "\n") 
+
+        # give overall question
+        g.write(prompt["general"]["prefix_main"] + example + "\n") 
+
+        # write history
+        # only write if history exists
+        if state != []:
+            g.write(prompt["actions"][action]["history"] + "\n") 
+            for idx, a in enumerate(prompt["actions"]):
+                # do not print action with no history
+                if any(type(s).__name__ == a for s in state):
+                    #g.write(a + ": " + "\n")
+                    for idx, s in enumerate(state):
+                        if a == type(s).__name__:
+                            g.write(s[0] + " "+ s[1] + "\n")
+
+        # # write examples
+        # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
+        # for idx, (parent_question, child_question) in enumerate(prompt["actions"][action]["examples"]["data"]):
+
+        #     g.write("Parent Question: " + prompt["actions"][action]["examples"]["data"][idx]["parent_question"] + "\n")
+        #     g.write("Child Question: " + prompt["actions"][action]["examples"]["data"][idx]["child_question"] + "\n")
+
+        g.write("Please write a query that uses the context to get new information.")
+
+        # output format
+        g.write(prompt["actions"][action]["output_format"] + "\n") 
+        # g.write("Parent Question: " + example + "\n")
+        # g.write("Child Question: ")
+        model_input = g.getvalue()
+    return model_input
+        
 
 def retrieve_answer(output: Union[list, str]) -> Optional[str]:
     '''

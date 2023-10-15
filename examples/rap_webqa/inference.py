@@ -70,10 +70,31 @@ def rap_gsm8k(base_model: LanguageModel,
         aggregator = None
 
     # dataset = load_dataset("gsm8k", "main", split=f'test[{resume}:]')
+    #### one question
+    # dataset = [{
+    #     "question" : "How much longer is the Nevezis than the A1 Kaunas-Klaipeda highway?",
+    #     "answer" : "\n#### 20"
+    # }]
+
+    # dataset = [{
+    #     "question" : "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?",
+    #     "answer" : "\n#### East"
+    # }]
+
+    # dataset = [{
+    #     "question" : "\"Does the \"Summer, Lake Ontario\" painting by Jasper Francis Cropsey or the \"Sunrise Over Diamond Head\" painting by Jules Tavernier show a more cloudy sky?\"",
+    #     "answer" : "\n#### East"
+    # }]
     dataset = [{
-        "question" : "How much longer is the Nevezis than the A1 Kaunas-Klaipeda highway?",
-        "answer" : "\n#### 20"
+        "question" : "In August 2018 what university began offering courses in the community with ZIP code 29707?",
+        "answer" : "\n#### East"
     }]
+    
+    
+    
+    if len(dataset) < 3:
+        print("dataset: ", dataset)
+
 
     correct_count = 0
     for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
@@ -149,6 +170,11 @@ if __name__ == '__main__':
             torch.manual_seed(0)
             torch.cuda.manual_seed(0)
             torch.backends.cudnn.deterministic = True
+
+        # TODO
+        print("base_lm: ", base_lm)
+        print("exllama_model_dir: ", exllama_model_dir)
+        print("hf_path: ", hf_path)
 
         if base_lm == 'llama':
             from reasoners.lm import LlamaModel

@@ -1,5 +1,5 @@
 import io
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, TypedDict, Union
 from collections import defaultdict
 from reasoners import WorldModel, LanguageModel
 import utils
@@ -10,8 +10,23 @@ class SubResult(NamedTuple):
     sub_answer: str
     confidence: float
 
+# class RetrievalResult(NamedTuple):
+#     context: str
+#     retrieved_sources: list[str]
+#     retrieved_snippets: list[str]
 
-GSM8kState = list[SubResult]
+# class DecomposeResult(NamedTuple):
+#     sub_question: str
+#     sub_answer: str
+#     confidence: float
+from collections import namedtuple
+DecomposeResult = namedtuple("DECOMPOSE", ["sub_question", "sub_answer", "confidence"])
+
+RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
+
+AnswerResult = namedtuple("ANSWER", ["main_question", "main_answer", "confidence"])
+
+GSM8kState = list[Union[RetrievalResult, DecomposeResult, AnswerResult]]
 GSM8kAction = str
 
 
@@ -21,6 +36,60 @@ class GSM8kPrompt(TypedDict):
     subquestion_prefix: str
     answer_prefix: str
     overall_question_prefix: str
+
+class Retrieval():
+    def __init__(self) -> None:
+        from langchain.document_loaders import JSONLoader
+        from langchain.embeddings import HuggingFaceEmbeddings
+        from langchain.vectorstores import FAISS
+        
+        path = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+        
+        loader = JSONLoader(
+            file_path=path,
+            jq_schema='.[0].txt_posFacts[], .[0].txt_negFacts[]',
+            content_key="fact",
+            text_content=True,
+        )
+        documents = loader.load()      
+
+        model_name = "sentence-transformers/all-mpnet-base-v2"
+        model_kwargs = {"device": "cuda"}
+
+        from langchain.embeddings import HuggingFaceInferenceAPIEmbeddings
+
+        # key should be inferred from bashrc
+        embeddings_api = HuggingFaceInferenceAPIEmbeddings(
+            model_name=model_name
+        )
+
+        #embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
+        embeddings = embeddings_api
+        # storing embeddings in the vector store
+        vectorstore = FAISS.from_documents(documents, embeddings)
+
+        self.documents = documents
+        self.embeddings = embeddings
+        self.vectorstore = vectorstore
+
+
+    def retrieve(self, query: str) -> str:
+        #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
+        docs = self.vectorstore.similarity_search(query)
+        return docs
+        
+
+        
+
+class Toolbox():
+    def __init__(self) -> None:
+        self.retrieval = Retrieval()
+
+    def execute_tool(self, question: str) -> str:
+        return self.retrieval.retrieve(question)
+
+
+
 
 
 class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
@@ -47,11 +116,22 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
         self.early_stop_base = early_stop_base if early_stop_base is not None else n_confidence
         self.early_stop_threshold = early_stop_threshold
 
+        self.init_tools()
+
     def init_state(self) -> list:
         return []
+    
+    def init_tools(self):
+        self.tools = Toolbox()
 
     def step(self, state: GSM8kState, action: GSM8kAction) -> tuple[GSM8kState, dict]:
         state = state.copy()
+
+        docs = self.tools.execute_tool(action)
+
+
+        state.append(RetrievalResult(action, ','.join([f'{i}) ' + doc.page_content \
+                                            for i, doc in enumerate(docs)]), [[doc.metadata['source'] for doc in docs]]))
 
         with io.StringIO() as f:
             f.write(self.prompt["input"])

@@ -4,9 +4,10 @@ from typing import TypedDict, Optional
 
 import numpy as np
 
-from world_model import GSM8kState, GSM8kAction, GSM8kPrompt
+from world_model import GSM8kState, GSM8kAction, GSM8kPrompt, DecomposeResult, RetrievalResult
 from reasoners import SearchConfig, LanguageModel
 
+import utils
 
 class GSM8kUsefulPrompt(TypedDict):
     input: str
@@ -48,22 +49,38 @@ class GSM8kConfig(SearchConfig):
 
     def update_example(self, example: str) -> None:
         super().update_example(example)
+        # TODO
         if self.force_overall_prompt_on_overall_question or self.force_overall_question_on_overall_prompt:
-            self.overall_question = re.match('.*((Calculate|calculate|how|How|what|What|Find|find|True or false).*)$',
-                                             self.example)[1]
+            # self.overall_question = re.match('.*((Calculate|calculate|how|How|what|What|Find|find|True or false).*)$',
+            #                                  self.example)[1]
+            self.overall_question = self.example
 
     def get_actions(self, state: GSM8kState, ) -> list[GSM8kAction]:
-        with io.StringIO() as f:
-            f.write(self.prompt["input"])
-            f.write(self.prompt["question_prefix"] + self.example + "\n")
-            for idx, (q, a, _) in enumerate(state):
-                f.write(self.prompt["subquestion_prefix"].format(idx + 1) + " " + q + "\n")
-                f.write(self.prompt["answer_prefix"].format(idx + 1) + " " + a + "\n")
-            f.write(self.prompt["subquestion_prefix"].format(len(state) + 1))
-            if at_depth_limit := self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit:
-                f.write(" " + self.prompt["overall_question_prefix"])
-            model_input = f.getvalue()
 
+        # state_list = [
+        #     DecomposeResult("What is Nevezis exactly?", "The Nevezis is the sixth longest river in Lithuania", 0.9),
+        #     RetrievalResult("Give me the length of the A1 Kaunas-Klaipeda highway.", "311,4 km.", []),
+        # ]
+        # state_list = [
+        #     DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
+        #     RetrievalResult("Give me the direction the Salween River in Myanmar flows.", "It flows from North to South.", []),
+        # ]
+        # state_list = [
+        #     #DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
+        #     RetrievalResult("Is it very cloudy on the \"Summer, Lake Ontario\" painting by Jasper Francis Cropsey?", "It is not very cloudy.", []),
+        # ]
+        state_list = [
+            #DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
+            RetrievalResult("List the universities with the ZIP code 29707?", "The University of South Carolina Lancaster and University of Manhattan", []),
+        ]
+        state_list = []
+        model_input = utils.action_selection(self.prompt, self.example, state_list)
+
+        #model_input = action_selection()
+        print("#" * 25 + "Action Selection Input" + "#" * 25)
+        print(model_input)
+
+        at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
         temperature = 0 if at_depth_limit else self.temperature
         outputs = []
@@ -75,17 +92,68 @@ class GSM8kConfig(SearchConfig):
                                                 temperature=temperature,
                                                 eos_token_id='\n').text
 
+
+        print("#" * 25 + "Action Selection Output" + "#" * 25)
+        print(outputs)
+
+        
+
+        def find_first_appearance(text):
+            keywords = list(self.prompt["actions"].keys())
+            
+            for keyword in keywords:
+                if keyword in text:
+                    return keyword
+            
+            return None  # None of the keywords found
+
+        first_outputs = [find_first_appearance(output) for output in outputs]
+
+        
+        #first_outputs = ['DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE']
+        first_outputs = ['RETRIEVE', 'RETRIEVE', 'RETRIEVE', 'RETRIEVE']
+
+        print("first_outputs")
+        print(first_outputs)
+        
+        actions = [utils.execute_action(self.prompt, self.example, state_list, output) for output in first_outputs]
+
+        print("#" * 25 + "Action Input" + "#" * 25)
+        print(actions)
+
+
+        outputs = []
+        for act in actions:
+            if act != 'ANSWER':
+                outputs += self.base_model.generate([act],
+                                                    hide_input=True,
+                                                    do_sample=True,
+                                                    temperature=temperature,
+                                                    eos_token_id='\n').text
+                
+            else:
+                outputs += ['ANSWER']
+
+        # 
+        print("#" * 25 + "Action Output" + "#" * 25)
+        print(outputs)
+
+        # import sys
+        # sys.exit()
+        
+
         outputs = [output.strip() for output in outputs]
-        if at_depth_limit:
-            outputs = [self.prompt["overall_question_prefix"] + ' ' + output for output in outputs]
-        if self.force_overall_question_on_overall_prompt:
-            for i, output in enumerate(outputs):
-                if self.prompt["overall_question_prefix"] in output:
-                    outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
-        if self.force_overall_prompt_on_overall_question:
-            for i, output in enumerate(outputs):
-                if self.overall_question.lower() == output.lower():
-                    outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
+        # if at_depth_limit:
+        #     outputs = [self.prompt["overall_question_prefix"] + ' ' + output for output in outputs]
+        # TODO understand use
+        # if self.force_overall_question_on_overall_prompt:
+        #     for i, output in enumerate(outputs):
+        #         if self.prompt["overall_question_prefix"] in output:
+        #             outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
+        # if self.force_overall_prompt_on_overall_question:
+        #     for i, output in enumerate(outputs):
+        #         if self.overall_question.lower() == output.lower():
+        #             outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
 
         # set does not guarantee order, but dict does guarantee
         # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes
