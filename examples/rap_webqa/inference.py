@@ -23,7 +23,10 @@ def node_visualizer(x: MCTSNode[GSM8kState, GSM8kAction]):
     if x.state[-1].state_type == "ANSWER":
         return {"question": x.state[-1].main_question, "answer": x.state[-1].main_answer}
     elif x.state[-1].state_type == "RETRIEVE":
-        return {"context": x.state[-1].context, "retrieved_snippets": x.state[-1].retrieved_snippets}
+        #, "retrieved_snippets": x.state[-1].retrieved_snippets
+        return {"context": x.state[-1].context} 
+    elif x.state[-1].state_type == "INVALID":
+        return {"content": "INVALID"} 
 
 
 def rap_gsm8k(base_model: LanguageModel,
