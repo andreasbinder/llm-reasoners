@@ -43,9 +43,12 @@ class AnswerResult(NamedTuple):
     confidence: float
 # AnswerResult = namedtuple("ANSWER", ["main_question", "main_answer", "confidence"])
 
+class InvalidResult(NamedTuple):
+    state_type: str
+    
 
 
-GSM8kState = list[Union[RetrievalResult, DecomposeResult, AnswerResult]]
+GSM8kState = list[Union[RetrievalResult, DecomposeResult, AnswerResult, InvalidResult]]
 GSM8kAction = str
 
 
@@ -143,7 +146,7 @@ class Toolbox():
             base_model=self.world_model.base_model,
             temperature=self.world_model.temperature
         )
-        self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE']
+        self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID']
 
     def execute_tool(self, prompt, example, state, action: str) -> str:
         keyword = utils.find_first_appearance(action, self.keywords)
@@ -152,6 +155,8 @@ class Toolbox():
             return self.answer.answer(prompt, example, state, action)
         elif keyword == 'RETRIEVE':
             return self.retrieval.retrieve(action)
+        elif keyword == 'INVALID':
+            return InvalidResult("INVALID")
         else:
             raise KeyError(f"Action {keyword} not found in {self.keywords}")
 
@@ -203,7 +208,7 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
     def is_terminal(self, state: GSM8kState) -> bool:
         # check when used namedtuples
         # if len(state) > 0 and type(state[-1]).__name__ == 'ANSWER':
-        if len(state) > 0 and state[-1].state_type == 'ANSWER':
+        if len(state) > 0 and (state[-1].state_type == 'ANSWER' or state[-1].state_type == 'INVALID'):
             return True
         else:
             return False

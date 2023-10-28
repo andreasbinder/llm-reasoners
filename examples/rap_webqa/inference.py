@@ -96,7 +96,7 @@ def rap_gsm8k(base_model: LanguageModel,
     # }]
     dataset = [{
         "question" : "Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?",
-        "answer" : "\n#### No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
+        "answer" : "No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
     }]
  
     HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
@@ -125,7 +125,7 @@ def rap_gsm8k(base_model: LanguageModel,
         # correct_count += correct
         # accuracy = correct_count / (i + 1)
         # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
-        print(f'Prediction: {algo_output.terminal_state}')
+        print(f'Prediction: {algo_output.terminal_state[-1].main_answer}')
         print(f'Answer: {example["answer"]}')
         log_str = f'Custom-Test-MCTS-Output'
         tqdm.write(log_str)

@@ -114,7 +114,7 @@ class GSM8kConfig(SearchConfig):
         print("keywords")
         print(keywords)
         
-        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example, state, keyword) for keyword in keywords]
+        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example, state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
         #prompts_per_keyword = ["Generate a textual query for finding the university that started offering courses in the community with ZIP code 29707 in August 2018.\n"] * 4
         #prompts_per_keyword = ["Generate a subquestion related to the following question: 'In August 2018, what university began offering courses in the community with ZIP code 29707?\n"] * 4 
         #prompts_per_keyword = ["Generate a subquestion that gives a partial answer to the following question: Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?\n"] * 4 
@@ -128,6 +128,8 @@ class GSM8kConfig(SearchConfig):
         for keyword, prompt in zip(keywords, prompts_per_keyword):
             if keyword == 'ANSWER':
                 actions += ['ANSWER' + ': ' + self.example]
+            elif keyword == 'INVALID':
+                actions += ['INVALID']
             else:
                 model_output = self.base_model.generate([prompt],
                                                     hide_input=True,

@@ -9,6 +9,8 @@ def node_visualizer(x):
     # match states
     if x.state[-1].state_type == "ANSWER":
         return {"question": x.state[-1].main_question, "answer": x.state[-1].main_answer}
+    elif x.state[-1].state_type == "INVALID":
+        return {"state": "INVALID"}
     elif x.state[-1].state_type == "RETRIEVE":
         return {"context": x.state[-1].context, "retrieved_snippets": x.state[-1].retrieved_snippets}
 
