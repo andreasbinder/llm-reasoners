@@ -1,0 +1,14 @@
+{
+  "general": {
+    "description": "Given a question and action, determine whether the chosen action is useful to answer the question, given the context. Output 'Yes' or 'No', and a reason.",
+    "prefix_main": "The overall question is: ",
+    "history": "This context gathered so far:",
+    "prefix_action": "The action is:",
+    "suffix_action": "Is the new action useful?"
+  },
+  "description": "New question 4.2: How much water do they have in total?\nIs the new question useful? No. It is too hard to answer the new question based on the current information.\n\n",
+  "question_prefix": "Question 5: ",
+  "subquestion_prefix": "Question 5.{}:",
+  "new_subquestion_prefix": "New question 5.{}:",
+  "useful_prefix": "Is the new question useful?"
+}

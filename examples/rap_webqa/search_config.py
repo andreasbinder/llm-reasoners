@@ -57,118 +57,107 @@ class GSM8kConfig(SearchConfig):
 
     def get_actions(self, state: GSM8kState, ) -> list[GSM8kAction]:
 
-        # state_list = [
-        #     DecomposeResult("What is Nevezis exactly?", "The Nevezis is the sixth longest river in Lithuania", 0.9),
-        #     RetrievalResult("Give me the length of the A1 Kaunas-Klaipeda highway.", "311,4 km.", []),
-        # ]
-        # state_list = [
-        #     DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
-        #     RetrievalResult("Give me the direction the Salween River in Myanmar flows.", "It flows from North to South.", []),
-        # ]
-        # state_list = [
-        #     #DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
-        #     RetrievalResult("Is it very cloudy on the \"Summer, Lake Ontario\" painting by Jasper Francis Cropsey?", "It is not very cloudy.", []),
-        # ]
-        state_list = [
-            #DecomposeResult("Who are the best tree travelers in the animal kingdom?", "Gibbons are the best tree travelers in the animal kingdom.", 0.9),
-            RetrievalResult("List the universities with the ZIP code 29707?", "The University of South Carolina Lancaster and University of Manhattan", []),
-        ]
-        state_list = []
-        model_input = utils.action_selection(self.prompt, self.example, state_list)
+        model_input = utils.action_selection_prompt(self.prompt, self.example, state)
 
         #model_input = action_selection()
         print("#" * 25 + "Action Selection Input" + "#" * 25)
         print(model_input)
 
+        available_actions = list(self.prompt["actions"].keys())
+
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
         temperature = 0 if at_depth_limit else self.temperature
-        outputs = []
+        selected_actions = []
+
+        max_attempts = 5
         for idx in range(0, n_actions, self.batch_size):
             n_samples = min(n_actions - idx, self.batch_size)
-            outputs += self.base_model.generate([model_input] * n_samples,
+            # selected_actions += self.base_model.generate([model_input] * n_samples,
+            #                                     hide_input=True,
+            #                                     do_sample=True,
+            #                                     temperature=temperature,
+            #                                     eos_token_id='\n').text
+            for i in range(max_attempts):
+                
+                selected_action = self.base_model.generate([model_input] * n_samples,
                                                 hide_input=True,
                                                 do_sample=True,
                                                 temperature=temperature,
-                                                eos_token_id='\n').text
+                                                eos_token_id='\n').text[0]
+                keyword = utils.find_first_appearance(selected_action, available_actions) 
+                if keyword is None:
+                    temperature = self.temperature
+                    print(f"Output '{selected_action}' not a valid action. Retrying...")
+                    continue  # This skips the rest of the code in the loop and starts the next iteration
 
+                # Process the valid output
+                print(f"Valid action received: {keyword}")
+                # ... your code to handle the valid output ...
+                selected_actions += [keyword]
+                break  # Break the loop if a valid action is found
+            else:
+                print("No valid action was found after maximum attempts.")
+                selected_actions += ["INVALID"]
+        # print("#" * 25 + "Action Selection Output" + "#" * 25)
+        # print(outputs)
 
-        print("#" * 25 + "Action Selection Output" + "#" * 25)
-        print(outputs)
-
+        # #first_outputs = [find_first_appearance(output) for output in outputs]
+        # keywords = [utils.find_first_appearance(selected_action, self.prompt["actions"].keys()) for selected_action in selected_actions]
+        keywords = selected_actions
         
 
-        def find_first_appearance(text):
-            keywords = list(self.prompt["actions"].keys())
-            
-            for keyword in keywords:
-                if keyword in text:
-                    return keyword
-            
-            return None  # None of the keywords found
-
-        first_outputs = [find_first_appearance(output) for output in outputs]
-
+        # keywords = ['DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE']
+        # keywords = ['RETRIEVE', 'RETRIEVE', 'RETRIEVE', 'RETRIEVE']
+        # keywords = ['RETRIEVE', 'RETRIEVE', 'DECOMPOSE', 'DECOMPOSE']
+        # result = ['R1', 'R2', 'D11','D12', 'D21','D22']
+        print("keywords")
+        print(keywords)
         
-        #first_outputs = ['DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE']
-        first_outputs = ['RETRIEVE', 'RETRIEVE', 'RETRIEVE', 'RETRIEVE']
+        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example, state, keyword) for keyword in keywords]
+        #prompts_per_keyword = ["Generate a textual query for finding the university that started offering courses in the community with ZIP code 29707 in August 2018.\n"] * 4
+        #prompts_per_keyword = ["Generate a subquestion related to the following question: 'In August 2018, what university began offering courses in the community with ZIP code 29707?\n"] * 4 
+        #prompts_per_keyword = ["Generate a subquestion that gives a partial answer to the following question: Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?\n"] * 4 
+        #################
 
-        print("first_outputs")
-        print(first_outputs)
-        
-        actions = [utils.execute_action(self.prompt, self.example, state_list, output) for output in first_outputs]
-
+        #################
         print("#" * 25 + "Action Input" + "#" * 25)
-        print(actions)
+        print(prompts_per_keyword)
 
-
-        outputs = []
-        for act in actions:
-            if act != 'ANSWER':
-                outputs += self.base_model.generate([act],
+        actions = []
+        for keyword, prompt in zip(keywords, prompts_per_keyword):
+            if keyword == 'ANSWER':
+                actions += ['ANSWER' + ': ' + self.example]
+            else:
+                model_output = self.base_model.generate([prompt],
                                                     hide_input=True,
                                                     do_sample=True,
                                                     temperature=temperature,
                                                     eos_token_id='\n').text
                 
-            else:
-                outputs += ['ANSWER']
-
-        # 
+                actions += [keyword + ': ' + model_output[0]]
+                
         print("#" * 25 + "Action Output" + "#" * 25)
-        print(outputs)
+        print(actions)
 
         # import sys
         # sys.exit()
-        
 
-        outputs = [output.strip() for output in outputs]
-        # if at_depth_limit:
-        #     outputs = [self.prompt["overall_question_prefix"] + ' ' + output for output in outputs]
+        actions = [action.strip() for action in actions]
+        if at_depth_limit:
+            
+            #outputs = ['ANSWER' for output in outputs]
+            actions = ['ANSWER' + ': ' + self.example for _ in actions]
         # TODO understand use
-        # if self.force_overall_question_on_overall_prompt:
-        #     for i, output in enumerate(outputs):
-        #         if self.prompt["overall_question_prefix"] in output:
-        #             outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
-        # if self.force_overall_prompt_on_overall_question:
-        #     for i, output in enumerate(outputs):
-        #         if self.overall_question.lower() == output.lower():
-        #             outputs[i] = self.prompt["overall_question_prefix"] + ' ' + self.overall_question
 
         # set does not guarantee order, but dict does guarantee
         # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes
-        outputs = list(dict.fromkeys(outputs))
-        return outputs
+        actions = list(dict.fromkeys(actions))
+        return actions
 
     def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
-        with io.StringIO() as f:
-            f.write(self.useful_prompt["input"])
-            f.write(self.useful_prompt["question_prefix"] + self.example + "\n")
-            for idx, (q, _, _) in enumerate(state):
-                f.write(self.useful_prompt["subquestion_prefix"].format(idx + 1) + " " + q + "\n")
-            f.write(self.useful_prompt["new_subquestion_prefix"].format(len(state) + 1) + " " + action + "\n")
-            f.write(self.useful_prompt["useful_prefix"])
-            model_input = f.getvalue()
+        
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example, state, action)
 
         logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
         probs = np.exp(logits) / np.sum(np.exp(logits))

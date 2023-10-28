@@ -30,9 +30,17 @@ def create_vector_store(path):
 
     return vectorstore
 
+def find_first_appearance(text, keys):
+    keywords = list(keys)
     
+    for keyword in keywords:
+        if keyword in text:
+            return keyword
+    
+    return None 
+   
 
-def action_selection(prompt, example, state):
+def action_selection_prompt(prompt, example, state):
     with io.StringIO() as f:
         f.write(prompt["action_selection"]["description"] + "\n") 
 
@@ -50,10 +58,10 @@ def action_selection(prompt, example, state):
             f.write(prompt["action_selection"]["history"] + "\n") 
             for idx, a in enumerate(prompt["actions"]):
                 # do not print action with no history
-                if any(type(s).__name__ == a for s in state):
+                if any(s.state_type == a for s in state):
                     f.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
-                        if a == type(s).__name__:
+                        if a == s.state_type:
                             f.write(s[0] + " "+ s[1] + "\n")
 
         # output format
@@ -61,7 +69,7 @@ def action_selection(prompt, example, state):
         model_input = f.getvalue()
     return model_input
 
-def execute_action(prompt, example, state, action):
+def action_prompt(prompt, example, state, action):
     
     with io.StringIO() as g:
         g.write(prompt["actions"][action]["description"] + "\n") 
@@ -75,10 +83,10 @@ def execute_action(prompt, example, state, action):
             g.write(prompt["actions"][action]["history"] + "\n") 
             for idx, a in enumerate(prompt["actions"]):
                 # do not print action with no history
-                if any(type(s).__name__ == a for s in state):
+                if any(s.state_type == a for s in state):
                     #g.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
-                        if a == type(s).__name__:
+                        if a == s.state_type:
                             g.write(s[0] + " "+ s[1] + "\n")
 
         # # write examples
@@ -88,15 +96,87 @@ def execute_action(prompt, example, state, action):
         #     g.write("Parent Question: " + prompt["actions"][action]["examples"]["data"][idx]["parent_question"] + "\n")
         #     g.write("Child Question: " + prompt["actions"][action]["examples"]["data"][idx]["child_question"] + "\n")
 
-        g.write("Please write a query that uses the context to get new information.")
+        #g.write("Please write a query that uses the context to get new information.")
 
         # output format
         g.write(prompt["actions"][action]["output_format"] + "\n") 
         # g.write("Parent Question: " + example + "\n")
         # g.write("Child Question: ")
         model_input = g.getvalue()
+    return model_input      
+
+def evaluation_prompt(action_prompt, prompt, example, state, action):
+    
+    # old code
+    # with io.StringIO() as f:
+    #         f.write(self.useful_prompt["input"])
+    #         f.write(self.useful_prompt["question_prefix"] + self.example + "\n")
+    #         for idx, (q, _, _) in enumerate(state):
+    #             f.write(self.useful_prompt["subquestion_prefix"].format(idx + 1) + " " + q + "\n")
+    #         f.write(self.useful_prompt["new_subquestion_prefix"].format(len(state) + 1) + " " + action + "\n")
+    #         f.write(self.useful_prompt["useful_prefix"])
+    #         model_input = f.getvalue()
+
+    with io.StringIO() as g:
+        g.write(prompt["general"]["description"] + "\n") 
+
+        # give overall question
+        g.write(prompt["general"]["prefix_main"] + example + "\n") 
+
+        # write history
+        # only write if history exists
+        if state != []:
+            g.write(prompt["general"]["history"] + "\n") 
+            for idx, a in enumerate(action_prompt["actions"]):
+                # do not print action with no history
+                if any(s.state_type == a for s in state):
+                    #g.write(a + ": " + "\n")
+                    for idx, s in enumerate(state):
+                        if a == s.state_type:
+                            g.write(s[0] + " "+ s[1] + "\n")
+
+        # # write examples
+        # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
+        # for idx, (parent_question, child_question) in enumerate(prompt["actions"][action]["examples"]["data"]):
+
+        #     g.write("Parent Question: " + prompt["actions"][action]["examples"]["data"][idx]["parent_question"] + "\n")
+        #     g.write("Child Question: " + prompt["actions"][action]["examples"]["data"][idx]["child_question"] + "\n")
+
+        # output format
+        g.write(prompt["general"]["prefix_action"] + " " + action + "\n") 
+        # suffix_action
+        g.write(prompt["general"]["suffix_action"] + "\n")  
+        
+        model_input = g.getvalue()
     return model_input
         
+def answer_prompt(prompt, example, state, action):
+
+    with io.StringIO() as g:
+        g.write(prompt["actions"][action]["description"] + "\n") 
+
+        # give overall question
+        g.write(prompt["general"]["prefix_main"] + example + "\n") 
+
+        # write history
+        # only write if history exists
+        if state != []:
+            g.write(prompt["actions"][action]["history"] + "\n") 
+            for idx, a in enumerate(prompt["actions"]):
+                # do not print action with no history
+                if any(s.state_type == a for s in state):
+                    #g.write(a + ": " + "\n")
+                    for idx, s in enumerate(state):
+                        if a == s.state_type:
+                            g.write(s[0] + " "+ s[1] + "\n")
+
+        # output format
+        g.write(prompt["actions"][action]["output_format"] + "\n") 
+        # g.write("Parent Question: " + example + "\n")
+        # g.write("Child Question: ")
+        model_input = g.getvalue()
+    return model_input      
+
 
 def retrieve_answer(output: Union[list, str]) -> Optional[str]:
     '''

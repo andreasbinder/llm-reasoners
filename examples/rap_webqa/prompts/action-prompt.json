@@ -30,15 +30,16 @@
     {
         "ANSWER": {
             "description": "Provide a direct answer to the question without forwarding a task.",
-            "history": "",
-            "output_format": "The final answer is: "
+            "history": "This context you can use to answer the question:",
+            "output_format": "The final answer is:"
         },
         
         "RETRIEVE": {
             "description": "Create a textual query to answer an overall question.",
             "history": "This context you can use to formulate the query:",
             "examples": "Examples of retrieved information:",
-            "output_format": "The textual query towards the document retriever is: "
+            "output_format": "What is the textual query towards the document retriever?",
+            "dep1_output_format": "The textual query towards the document retriever is:"
         } 
     }       
 }

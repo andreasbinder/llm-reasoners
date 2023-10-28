@@ -20,11 +20,30 @@ class SubResult(NamedTuple):
 #     sub_answer: str
 #     confidence: float
 from collections import namedtuple
-DecomposeResult = namedtuple("DECOMPOSE", ["sub_question", "sub_answer", "confidence"])
 
-RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
+class DecomposeResult(NamedTuple):
+    state_type: str
+    sub_question: str
+    sub_answer: str
+    confidence: float
 
-AnswerResult = namedtuple("ANSWER", ["main_question", "main_answer", "confidence"])
+# DecomposeResult = namedtuple("DECOMPOSE", ["sub_question", "sub_answer", "confidence"])
+
+class RetrievalResult(NamedTuple):
+    state_type: str
+    context: str
+    retrieved_snippets: str
+    retrieved_sources: float
+# RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
+
+class AnswerResult(NamedTuple):
+    state_type: str
+    main_question: str
+    main_answer: str
+    confidence: float
+# AnswerResult = namedtuple("ANSWER", ["main_question", "main_answer", "confidence"])
+
+
 
 GSM8kState = list[Union[RetrievalResult, DecomposeResult, AnswerResult]]
 GSM8kAction = str
@@ -43,11 +62,12 @@ class Retrieval():
         from langchain.embeddings import HuggingFaceEmbeddings
         from langchain.vectorstores import FAISS
         
-        path = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
-        
+        # path = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+        path = 'data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+
         loader = JSONLoader(
             file_path=path,
-            jq_schema='.[0].txt_posFacts[], .[0].txt_negFacts[]',
+            jq_schema='.[1].txt_posFacts[], .[1].txt_negFacts[]',
             content_key="fact",
             text_content=True,
         )
@@ -58,8 +78,15 @@ class Retrieval():
 
         from langchain.embeddings import HuggingFaceInferenceAPIEmbeddings
 
+
+        import os
         # key should be inferred from bashrc
+        HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", None)
+        if HUGGINGFACE_TOKEN is None:
+            raise ValueError("HUGGINGFACE_TOKEN not set, please run `export HUGGINGFACE_TOKEN=<your key>` to ser it")
+       
         embeddings_api = HuggingFaceInferenceAPIEmbeddings(
+            api_key=HUGGINGFACE_TOKEN,
             model_name=model_name
         )
 
@@ -76,19 +103,57 @@ class Retrieval():
     def retrieve(self, query: str) -> str:
         #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
         docs = self.vectorstore.similarity_search(query)
-        return docs
+
+        result = RetrievalResult(
+            "RETRIEVE",
+            query, ','.join([f'{i}) ' + doc.page_content \
+                                            for i, doc in enumerate(docs)]), [[doc.metadata['source'] for doc in docs]])
+
+        return result
         
 
-        
+class Answer():
+    def __init__(self, base_model, temperature) -> None:
+        self.base_model = base_model
+        self.temperature = temperature
+
+    def answer(self, prompt, example, state, action: str) -> str:
+
+
+        model_input = utils.answer_prompt(prompt, example, state, "ANSWER")
+
+        num = 1
+        answer = self.base_model.generate([model_input] * num,
+                                            hide_input=True,
+                                            do_sample=True,
+                                            temperature=self.temperature,
+                                            eos_token_id='\n').text
+
+        confidence = 0.8
+        result = AnswerResult("ANSWER", action, answer, confidence)
+        return result
 
 class Toolbox():
-    def __init__(self) -> None:
+    def __init__(self, world_model) -> None:
+
+        self.world_model = world_model
+
         self.retrieval = Retrieval()
+        self.answer = Answer(
+            base_model=self.world_model.base_model,
+            temperature=self.world_model.temperature
+        )
+        self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE']
 
-    def execute_tool(self, question: str) -> str:
-        return self.retrieval.retrieve(question)
-
-
+    def execute_tool(self, prompt, example, state, action: str) -> str:
+        keyword = utils.find_first_appearance(action, self.keywords)
+        
+        if keyword == 'ANSWER':
+            return self.answer.answer(prompt, example, state, action)
+        elif keyword == 'RETRIEVE':
+            return self.retrieval.retrieve(action)
+        else:
+            raise KeyError(f"Action {keyword} not found in {self.keywords}")
 
 
 
@@ -122,74 +187,23 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
         return []
     
     def init_tools(self):
-        self.tools = Toolbox()
+        self.tools = Toolbox(self)
 
     def step(self, state: GSM8kState, action: GSM8kAction) -> tuple[GSM8kState, dict]:
         state = state.copy()
 
-        docs = self.tools.execute_tool(action)
+        result = self.tools.execute_tool(self.prompt, self.example, state, action)
 
+        state.append(result)
 
-        state.append(RetrievalResult(action, ','.join([f'{i}) ' + doc.page_content \
-                                            for i, doc in enumerate(docs)]), [[doc.metadata['source'] for doc in docs]]))
-
-        with io.StringIO() as f:
-            f.write(self.prompt["input"])
-            f.write(self.prompt["question_prefix"] + self.example + "\n")
-            for idx, (q, a, _) in enumerate(state):
-                f.write(self.prompt["subquestion_prefix"].format(idx + 1) + " " + q + "\n")
-                f.write(self.prompt["answer_prefix"].format(idx + 1) + " " + a + "\n")
-            f.write(self.prompt["subquestion_prefix"].format(len(state) + 1) + " " + action + "\n")
-            f.write(self.prompt["answer_prefix"].format(len(state) + 1))
-            model_input = f.getvalue()
-
-        answer_dict = defaultdict(list)  # map from answer to list of thoughts
-        result = ""
-        for start1 in range(0, self.n_confidence, self.early_stop_base):
-            stop1 = min(start1 + self.early_stop_base, self.n_confidence)
-
-            for start in range(start1, stop1, self.batch_size):
-                stop = min(start + self.batch_size, stop1)
-                num = stop - start
-
-                outputs = self.base_model.generate([model_input] * num,
-                                                   hide_input=True,
-                                                   do_sample=True,
-                                                   temperature=self.temperature,
-                                                   eos_token_id='\n').text
-                for output in outputs:
-                    result = output.strip()
-                    answer = utils.retrieve_answer(result)
-                    if answer is not None:
-                        answer_dict[answer].append(result)
-
-            # Early stop if confidence is high enough
-            if len(answer_dict) == 0:  # no answer yet
-                continue
-            sorted_answer_dict = sorted(answer_dict.items(), key=lambda p: len(p[1]), reverse=True)
-            max_len = len(sorted_answer_dict[0][1])
-            if max_len / stop1 >= self.early_stop_threshold:
-                if len(sorted_answer_dict) >= 2 and max_len == len(sorted_answer_dict[1][1]):
-                    pass  # Tie with the second best answer
-                else:
-                    break
-
-        if len(answer_dict) == 0:
-            confidence, answer = 0, result  # No reasonable answer found. Fall back to choose the last response
-        else:
-            sorted_answer_dict = sorted(answer_dict.items(), key=lambda p: len(p[1]), reverse=True)
-            max_answer = sorted_answer_dict[0]
-            max_answer_output_list = max_answer[1]
-            max_len = len(max_answer_output_list)
-            answer = max_answer_output_list[0]  # Here we simply choose the first appearance of the answer
-            confidence = max_len / sum(len(v) for v in answer_dict.values())
-
-        state.append(SubResult(action, answer, confidence))
-        aux = {'confidence': confidence}
+        # TODO take care of aux later
+        aux = {'confidence': 0.8}
         return state, aux
 
     def is_terminal(self, state: GSM8kState) -> bool:
-        if len(state) > 0 and "Now we can answer" in state[-1].sub_question:
+        # check when used namedtuples
+        # if len(state) > 0 and type(state[-1]).__name__ == 'ANSWER':
+        if len(state) > 0 and state[-1].state_type == 'ANSWER':
             return True
         else:
             return False

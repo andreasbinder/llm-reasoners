@@ -18,7 +18,12 @@ import utils
 def node_visualizer(x: MCTSNode[GSM8kState, GSM8kAction]):
     if not x.state:
         return {}
-    return {"question": x.state[-1].sub_question, "answer": x.state[-1].sub_answer}
+    # return {"question": x.state[-1].sub_question, "answer": x.state[-1].sub_answer}
+    # match states
+    if x.state[-1].state_type == "ANSWER":
+        return {"question": x.state[-1].main_question, "answer": x.state[-1].main_answer}
+    elif x.state[-1].state_type == "RETRIEVE":
+        return {"context": x.state[-1].context, "retrieved_snippets": x.state[-1].retrieved_snippets}
 
 
 def rap_gsm8k(base_model: LanguageModel,
@@ -46,7 +51,7 @@ def rap_gsm8k(base_model: LanguageModel,
               **search_algo_params):
     if not disable_log:
         if log_dir is None:
-            log_dir = f'logs/gsm8k_{search_algo.__name__}/{datetime.now().strftime("%m%d%Y-%H%M%S")}'
+            log_dir = f'logs/webqa_{search_algo.__name__}/{datetime.now().strftime("%m%d%Y-%H%M%S")}'
         os.makedirs(log_dir, exist_ok=resume > 0)
         os.makedirs(os.path.join(log_dir, 'algo_output'), exist_ok=True)
         with open(os.path.join(log_dir, 'args.txt'), 'w') as f:
@@ -85,12 +90,17 @@ def rap_gsm8k(base_model: LanguageModel,
     #     "question" : "\"Does the \"Summer, Lake Ontario\" painting by Jasper Francis Cropsey or the \"Sunrise Over Diamond Head\" painting by Jules Tavernier show a more cloudy sky?\"",
     #     "answer" : "\n#### East"
     # }]
+    # dataset = [{
+    #     "question" : "In August 2018 what university began offering courses in the community with ZIP code 29707?",
+    #     "answer" : "\n#### East"
+    # }]
     dataset = [{
-        "question" : "In August 2018 what university began offering courses in the community with ZIP code 29707?",
-        "answer" : "\n#### East"
+        "question" : "Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?",
+        "answer" : "\n#### No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
     }]
-    
-    
+ 
+    HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
+    print("HF_memory_footprint: ", HF_memory_footprint)
     
     if len(dataset) < 3:
         print("dataset: ", dataset)
@@ -100,18 +110,24 @@ def rap_gsm8k(base_model: LanguageModel,
     for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
                                      desc='GSM8k', disable=disable_tqdm)):
         algo_output = reasoner(example["question"])
-        if aggregate:
-            output = aggregator(algo_output.tree_state)
-        elif algo_output.terminal_state is None:
-            output = None
-        else:
-            output = utils.retrieve_answer(algo_output.terminal_state)
-        answer = utils.retrieve_answer_from_dataset(example["answer"])
-        correct = utils.judge_answer(output, answer)
 
-        correct_count += correct
-        accuracy = correct_count / (i + 1)
-        log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
+        # TODO only necessary for evaluation -> do our own
+        # TODO what does the aggregator do?
+        # if aggregate:
+        #     output = aggregator(algo_output.tree_state)
+        # elif algo_output.terminal_state is None:
+        #     output = None
+        # else:
+        #     output = utils.retrieve_answer(algo_output.terminal_state)
+        # answer = utils.retrieve_answer_from_dataset(example["answer"])
+        # correct = utils.judge_answer(output, answer)
+
+        # correct_count += correct
+        # accuracy = correct_count / (i + 1)
+        # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
+        print(f'Prediction: {algo_output.terminal_state}')
+        print(f'Answer: {example["answer"]}')
+        log_str = f'Custom-Test-MCTS-Output'
         tqdm.write(log_str)
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
@@ -193,8 +209,12 @@ if __name__ == '__main__':
             from reasoners.lm import ExLlamaModel
             base_model = ExLlamaModel(exllama_model_dir, exllama_lora_dir, mem_map=exllama_mem_map,
                                       max_batch_size=batch_size, max_new_tokens=200, max_seq_length=2048)
+        elif base_lm == "openai":
+            from reasoners.lm import GPTCompletionModel
+            base_model = GPTCompletionModel(model=exllama_model_dir, temperature=0.7, max_tokens=1000)
         else:
             assert False, f'cannot resolve {base_lm=}'
+
         rap_gsm8k(base_model=base_model,
                   interactive_prompt=interactive_prompt,
                   useful_prompt=useful_prompt,

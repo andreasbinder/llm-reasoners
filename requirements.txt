@@ -2,7 +2,7 @@ tqdm
 fire
 numpy
 scipy
-torch
+# torch==2.0.1+cu117
 datasets
 # hf
 transformers
