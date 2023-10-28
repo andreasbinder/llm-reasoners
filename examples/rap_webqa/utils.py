@@ -63,7 +63,7 @@ def action_selection_prompt(prompt, example, state):
                     for idx, s in enumerate(state):
                         if a == s.state_type:
                             #g.write(s[0] + " "+ s[1] + "\n")
-                            g.write(get_history(s, a) + "\n")
+                            f.write(get_history(s, a) + "\n")
 
         # output format
         f.write(prompt["action_selection"]["output_format"] + "\n") 
