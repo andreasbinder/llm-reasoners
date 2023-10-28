@@ -62,7 +62,8 @@ def action_selection_prompt(prompt, example, state):
                     f.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
                         if a == s.state_type:
-                            f.write(s[0] + " "+ s[1] + "\n")
+                            #g.write(s[0] + " "+ s[1] + "\n")
+                            g.write(get_history(s, a) + "\n")
 
         # output format
         f.write(prompt["action_selection"]["output_format"] + "\n") 
@@ -87,7 +88,8 @@ def action_prompt(prompt, example, state, action):
                     #g.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
                         if a == s.state_type:
-                            g.write(s[0] + " "+ s[1] + "\n")
+                            #g.write(s[0] + " "+ s[1] + "\n")
+                            g.write(get_history(s, a) + "\n")
 
         # # write examples
         # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
@@ -133,7 +135,8 @@ def evaluation_prompt(action_prompt, prompt, example, state, action):
                     #g.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
                         if a == s.state_type:
-                            g.write(s[0] + " "+ s[1] + "\n")
+                            #g.write(s[0] + " "+ s[1] + "\n")
+                            g.write(get_history(s, a) + "\n")
 
         # # write examples
         # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
@@ -168,7 +171,8 @@ def answer_prompt(prompt, example, state, action):
                     #g.write(a + ": " + "\n")
                     for idx, s in enumerate(state):
                         if a == s.state_type:
-                            g.write(s[0] + " "+ s[1] + "\n")
+                            #g.write(s[0] + " "+ s[1] + "\n")
+                            g.write(get_history(s, a) + "\n")
 
         # output format
         g.write(prompt["actions"][action]["output_format"] + "\n") 
@@ -177,6 +181,9 @@ def answer_prompt(prompt, example, state, action):
         model_input = g.getvalue()
     return model_input      
 
+def get_history(state, action):
+    if action == "RETRIEVE":
+        return state.retrieved_snippets
 
 def retrieve_answer(output: Union[list, str]) -> Optional[str]:
     '''

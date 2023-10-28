@@ -105,14 +105,22 @@ class Retrieval():
 
     def retrieve(self, query: str) -> str:
         #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
-        docs = self.vectorstore.similarity_search(query)
-
         query = query.replace("RETRIEVE: ", "", 1)
+
+        print("#" * 25 + "RETRIEVE Input" + "#" * 25)
+        print(query)
+        
+        docs = self.vectorstore.similarity_search(query)
 
         result = RetrievalResult(
             "RETRIEVE",
             query, ','.join([f'{i}) ' + doc.page_content \
                                             for i, doc in enumerate(docs)]), [doc.metadata['source'] for doc in docs])
+
+        print("#" * 25 + "RETRIEVE Output" + "#" * 25)
+        print(','.join([f'{i}) ' + doc.page_content \
+                                            for i, doc in enumerate(docs)]))
+
 
         return result
         
