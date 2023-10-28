@@ -148,7 +148,7 @@ class Answer():
         print(answer)
 
         confidence = 0.8
-        result = AnswerResult("ANSWER", action, answer, confidence)
+        result = AnswerResult("ANSWER", example, answer, confidence)
         return result
 
 class Toolbox():
