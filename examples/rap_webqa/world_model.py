@@ -107,10 +107,12 @@ class Retrieval():
         #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
         docs = self.vectorstore.similarity_search(query)
 
+        query = query.replace("RETRIEVE: ", "", 1)
+
         result = RetrievalResult(
             "RETRIEVE",
             query, ','.join([f'{i}) ' + doc.page_content \
-                                            for i, doc in enumerate(docs)]), [[doc.metadata['source'] for doc in docs]])
+                                            for i, doc in enumerate(docs)]), [doc.metadata['source'] for doc in docs])
 
         return result
         
@@ -122,8 +124,10 @@ class Answer():
 
     def answer(self, prompt, example, state, action: str) -> str:
 
-
+        
         model_input = utils.answer_prompt(prompt, example, state, "ANSWER")
+        print("#" * 25 + "ANSWER Input" + "#" * 25)
+        print(model_input)
 
         num = 1
         answer = self.base_model.generate([model_input] * num,
@@ -131,6 +135,8 @@ class Answer():
                                             do_sample=True,
                                             temperature=self.temperature,
                                             eos_token_id='\n').text
+        print("#" * 25 + "ANSWER Output" + "#" * 25)
+        print(answer)
 
         confidence = 0.8
         result = AnswerResult("ANSWER", action, answer, confidence)
