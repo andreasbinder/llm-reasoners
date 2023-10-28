@@ -45,6 +45,7 @@ class AnswerResult(NamedTuple):
 
 class InvalidResult(NamedTuple):
     state_type: str
+    main_answer: str
     
 
 
@@ -170,7 +171,7 @@ class Toolbox():
         elif keyword == 'RETRIEVE':
             return self.retrieval.retrieve(action)
         elif keyword == 'INVALID':
-            return InvalidResult("INVALID")
+            return InvalidResult("INVALID", "INVALID")
         else:
             raise KeyError(f"Action {keyword} not found in {self.keywords}")
 
