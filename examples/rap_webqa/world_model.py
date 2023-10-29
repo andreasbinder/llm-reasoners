@@ -33,7 +33,8 @@ class RetrievalResult(NamedTuple):
     state_type: str
     context: str
     retrieved_snippets: str
-    retrieved_sources: float
+    retrieved_sources: str
+    flags: str
 # RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
 
 class AnswerResult(NamedTuple):
@@ -75,12 +76,15 @@ class Retrieval():
         path = self.example['path']
         index = self.example['index']
 
+        
+        metadata_func_with_extra = self.create_metadata_func(path, index)
         # jq_schema='.[1].txt_posFacts[], .[1].txt_negFacts[]',
         loader = JSONLoader(
             file_path=path,
             jq_schema=f'.[{index}].txt_posFacts[], .[{index}].txt_negFacts[]',
             content_key="fact",
             text_content=True,
+            metadata_func=metadata_func_with_extra
         )
         documents = loader.load()      
 
@@ -110,6 +114,34 @@ class Retrieval():
         self.embeddings = embeddings
         self.vectorstore = vectorstore
 
+    def create_metadata_func(self, path, index):
+        from pathlib import Path
+        import json
+        parent = json.loads(Path(path).read_text())[index]
+        def metadata_func(record: dict, metadata: dict):
+            # Use extra_param here along with record and metadata
+            snippet_id = record.get("snippet_id")
+            flag = None
+
+            # Search in positive facts
+            for record in parent['txt_posFacts']:
+                if record['snippet_id'] == snippet_id:
+                    flag = 'pos'
+                    break
+
+            # Search in negative facts
+            if flag is None:  # continue searching only if not found in positive facts
+                for record in parent['txt_negFacts']:
+                    if record['snippet_id'] == snippet_id:
+                        flag = 'neg'
+                        break
+            
+            metadata["flag"] = flag
+            metadata["snippet_id"] = snippet_id
+            return metadata
+
+        return metadata_func
+
 
     def retrieve(self, query: str) -> str:
         #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
@@ -122,8 +154,11 @@ class Retrieval():
 
         result = RetrievalResult(
             "RETRIEVE",
-            query, ','.join([f'{i}) ' + doc.page_content \
-                                            for i, doc in enumerate(docs)]), [doc.metadata['source'] for doc in docs])
+            query, 
+            ','.join([f'{i}) ' + doc.page_content \
+                                            for i, doc in enumerate(docs)]), 
+            [doc.metadata['snippet_id'] for doc in docs], 
+            [doc.metadata['flag'] for doc in docs])
 
         print("#" * 25 + "RETRIEVE Output" + "#" * 25)
         print(','.join([f'{i}) ' + doc.page_content \

@@ -24,7 +24,11 @@ def node_visualizer(x: MCTSNode[GSM8kState, GSM8kAction]):
         return {"question": x.state[-1].main_question, "answer": x.state[-1].main_answer}
     elif x.state[-1].state_type == "RETRIEVE":
         #, "retrieved_snippets": x.state[-1].retrieved_snippets
-        return {"context": x.state[-1].context} 
+        return {
+            "context": x.state[-1].context,
+            "snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
+            "flags": x.state[-1].flags
+        } 
     elif x.state[-1].state_type == "INVALID":
         return {"content": "INVALID"} 
 
