@@ -120,7 +120,7 @@ def rap_gsm8k(base_model: LanguageModel,
         if isinstance(resume, int):
             selected_indices = [resume]
         if isinstance(resume, list):
-            selected_indices = resume
+            selected_indices = list(range(resume[0], resume[1]+1))
         
         
         selected_data = [
