@@ -51,6 +51,7 @@ def rap_gsm8k(base_model: LanguageModel,
               disable_tqdm: bool = False,
               output_trace_in_each_iter: bool = True,
               aggregate: bool = True,
+              path_to_webqa: str = None, # TODO
               **search_algo_params):
     if not disable_log:
         if log_dir is None:
@@ -108,7 +109,7 @@ def rap_gsm8k(base_model: LanguageModel,
     HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
     print("HF_memory_footprint: ", HF_memory_footprint)
     
-    path_to_webqa = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+    #path_to_webqa = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
     def load_webqa_dataset(path_to_webqa, resume):
         from pathlib import Path
         data = json.loads(Path(path_to_webqa).read_text())
@@ -135,7 +136,7 @@ def rap_gsm8k(base_model: LanguageModel,
 
     dataset = load_webqa_dataset(path_to_webqa, resume)
 
-
+    webqa_results = {}
 
     if len(dataset) < 3:
         print("dataset: ", dataset)
@@ -165,9 +166,18 @@ def rap_gsm8k(base_model: LanguageModel,
         # correct_count += correct
         # accuracy = correct_count / (i + 1)
         # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
-        print(f'Prediction: {algo_output.terminal_state[-1].main_answer}')
+        prediction = algo_output.terminal_state[-1].main_answer
+        print(f'Prediction: {prediction}')
         print(f'Answer: {example["answer"]}')
         log_str = f'Case {i}'
+        webqa_results.update({
+            example["index"]: {
+                "prediction": prediction,
+                "answer": example["answer"],
+                "question": example["question"], 
+            }
+        })
+
         tqdm.write(log_str)
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
@@ -182,6 +192,8 @@ def rap_gsm8k(base_model: LanguageModel,
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
+    with open(os.path.join(log_dir, f'webqa_results.json'), 'w') as json_file:
+        json.dump(webqa_results, json_file, indent=4)
 
 if __name__ == '__main__':
     import os
