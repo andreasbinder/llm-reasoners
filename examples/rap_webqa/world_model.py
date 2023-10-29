@@ -61,17 +61,24 @@ class GSM8kPrompt(TypedDict):
     overall_question_prefix: str
 
 class Retrieval():
-    def __init__(self) -> None:
+    def __init__(self, example) -> None:
+
+        self.example = example
+
         from langchain.document_loaders import JSONLoader
         from langchain.embeddings import HuggingFaceEmbeddings
         from langchain.vectorstores import FAISS
         
+
         # path = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
         path = 'data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+        path = self.example['path']
+        index = self.example['index']
 
+        # jq_schema='.[1].txt_posFacts[], .[1].txt_negFacts[]',
         loader = JSONLoader(
             file_path=path,
-            jq_schema='.[1].txt_posFacts[], .[1].txt_negFacts[]',
+            jq_schema=f'.[{index}].txt_posFacts[], .[{index}].txt_negFacts[]',
             content_key="fact",
             text_content=True,
         )
@@ -127,14 +134,15 @@ class Retrieval():
         
 
 class Answer():
-    def __init__(self, base_model, temperature) -> None:
+    def __init__(self, base_model, temperature, example) -> None:
         self.base_model = base_model
         self.temperature = temperature
+        self.question = example['question']
 
     def answer(self, prompt, example, state, action: str) -> str:
 
         
-        model_input = utils.answer_prompt(prompt, example, state, "ANSWER")
+        model_input = utils.answer_prompt(prompt, self.question, state, "ANSWER")
         print("#" * 25 + "ANSWER Input" + "#" * 25)
         print(model_input)
 
@@ -148,18 +156,22 @@ class Answer():
         print(answer)
 
         confidence = 0.8
-        result = AnswerResult("ANSWER", example, answer, confidence)
+        result = AnswerResult("ANSWER", self.question, answer, confidence)
         return result
 
 class Toolbox():
     def __init__(self, world_model) -> None:
 
         self.world_model = world_model
+        self.example = world_model.example
 
-        self.retrieval = Retrieval()
+        self.retrieval = Retrieval(
+            example = self.example
+        )
         self.answer = Answer(
             base_model=self.world_model.base_model,
-            temperature=self.world_model.temperature
+            temperature=self.world_model.temperature,
+            example = self.example
         )
         self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID']
 
@@ -201,13 +213,18 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
         self.early_stop_base = early_stop_base if early_stop_base is not None else n_confidence
         self.early_stop_threshold = early_stop_threshold
 
-        self.init_tools()
+        # self.init_tools()
 
     def init_state(self) -> list:
         return []
     
-    def init_tools(self):
+    # def init_tools(self):
+    #     self.tools = Toolbox(self)
+
+    def update_example(self, example: str) -> None:
+        super().update_example(example)
         self.tools = Toolbox(self)
+
 
     def step(self, state: GSM8kState, action: GSM8kAction) -> tuple[GSM8kState, dict]:
         state = state.copy()

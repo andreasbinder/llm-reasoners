@@ -57,7 +57,7 @@ class GSM8kConfig(SearchConfig):
 
     def get_actions(self, state: GSM8kState, ) -> list[GSM8kAction]:
 
-        model_input = utils.action_selection_prompt(self.prompt, self.example, state)
+        model_input = utils.action_selection_prompt(self.prompt, self.example["question"], state)
 
         #model_input = action_selection()
         print("#" * 25 + "Action Selection Input" + "#" * 25)
@@ -114,7 +114,7 @@ class GSM8kConfig(SearchConfig):
         print("keywords")
         print(keywords)
         
-        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example, state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
+        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example["question"], state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
         #prompts_per_keyword = ["Generate a textual query for finding the university that started offering courses in the community with ZIP code 29707 in August 2018.\n"] * 4
         #prompts_per_keyword = ["Generate a subquestion related to the following question: 'In August 2018, what university began offering courses in the community with ZIP code 29707?\n"] * 4 
         #prompts_per_keyword = ["Generate a subquestion that gives a partial answer to the following question: Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?\n"] * 4 
@@ -127,7 +127,7 @@ class GSM8kConfig(SearchConfig):
         actions = []
         for keyword, prompt in zip(keywords, prompts_per_keyword):
             if keyword == 'ANSWER':
-                actions += ['ANSWER' + ': ' + self.example]
+                actions += ['ANSWER' + ': ' + self.example["question"]]
             elif keyword == 'INVALID':
                 actions += ['INVALID']
             else:
@@ -149,7 +149,7 @@ class GSM8kConfig(SearchConfig):
         if at_depth_limit:
             
             #outputs = ['ANSWER' for output in outputs]
-            actions = ['ANSWER' + ': ' + self.example for _ in actions]
+            actions = ['ANSWER' + ': ' + self.example["question"] for _ in actions]
         # TODO understand use
 
         # set does not guarantee order, but dict does guarantee
@@ -159,7 +159,7 @@ class GSM8kConfig(SearchConfig):
 
     def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
         
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example, state, action)
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
 
         logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
         probs = np.exp(logits) / np.sum(np.exp(logits))

@@ -55,7 +55,8 @@ def rap_gsm8k(base_model: LanguageModel,
     if not disable_log:
         if log_dir is None:
             log_dir = f'logs/webqa_{search_algo.__name__}/{datetime.now().strftime("%m%d%Y-%H%M%S")}'
-        os.makedirs(log_dir, exist_ok=resume > 0)
+        #os.makedirs(log_dir, exist_ok=resume > 0)
+        os.makedirs(log_dir, exist_ok=True)
         os.makedirs(os.path.join(log_dir, 'algo_output'), exist_ok=True)
         with open(os.path.join(log_dir, 'args.txt'), 'w') as f:
             print(sys.argv, file=f)
@@ -97,22 +98,58 @@ def rap_gsm8k(base_model: LanguageModel,
     #     "question" : "In August 2018 what university began offering courses in the community with ZIP code 29707?",
     #     "answer" : "\n#### East"
     # }]
-    dataset = [{
-        "question" : "Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?",
-        "answer" : "No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
-    }]
+
+
+    # dataset = [{
+    #     "question" : "Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?",
+    #     "answer" : "No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
+    # }]
  
     HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
     print("HF_memory_footprint: ", HF_memory_footprint)
     
+    path_to_webqa = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+    def load_webqa_dataset(path_to_webqa, resume):
+        from pathlib import Path
+        data = json.loads(Path(path_to_webqa).read_text())
+        if isinstance(resume, str):
+            start_str, end_str = resume.strip('[]').split(',')
+            start, end = int(start_str), int(end_str)
+            selected_indices = list(range(start, end+1))
+        if isinstance(resume, int):
+            selected_indices = [resume]
+        if isinstance(resume, list):
+            selected_indices = resume
+        
+        
+        selected_data = [
+            {
+                "index": idx, 
+                "question": data[idx]["Q"], 
+                "answer": data[idx]["A"],
+                "path": path_to_webqa
+            } 
+            for idx in selected_indices if idx < len(data)
+        ]
+        return selected_data
+
+    dataset = load_webqa_dataset(path_to_webqa, resume)
+
+
+
     if len(dataset) < 3:
         print("dataset: ", dataset)
 
 
     correct_count = 0
-    for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
-                                     desc='GSM8k', disable=disable_tqdm)):
-        algo_output = reasoner(example["question"])
+    # for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
+    #                                  desc='WebQA', disable=disable_tqdm)):
+    for i, example in enumerate(tqdm(dataset, total=len(dataset),
+                                     desc='WebQA', disable=disable_tqdm)):
+        print("#" * 25 + "Case Number: "+ str(i) + "#" * 25)
+        
+        # algo_output = reasoner(example["question"])
+        algo_output = reasoner(example)
 
         # TODO only necessary for evaluation -> do our own
         # TODO what does the aggregator do?
@@ -130,15 +167,18 @@ def rap_gsm8k(base_model: LanguageModel,
         # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
         print(f'Prediction: {algo_output.terminal_state[-1].main_answer}')
         print(f'Answer: {example["answer"]}')
-        log_str = f'Custom-Test-MCTS-Output'
+        log_str = f'Case {i}'
         tqdm.write(log_str)
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
                 print(log_str, file=f)
-            with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
+              
+            # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
+            with open(os.path.join(log_dir, 'algo_output', f'{example["index"]  }.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
-                with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
+                # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
+                with open(os.path.join(log_dir, 'algo_output', f'{example["index"]}.json'), 'w') as f: 
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
