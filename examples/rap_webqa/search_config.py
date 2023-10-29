@@ -161,9 +161,16 @@ class GSM8kConfig(SearchConfig):
         
         model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
 
+        print("#" * 25 + "Evaluation Input" + "#" * 25)
+        print(model_input)
+
         logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
         probs = np.exp(logits) / np.sum(np.exp(logits))
         useful_prob = probs[0]
+        print("#" * 25 + "Evaluation Output" + "#" * 25)
+        print(useful_prob)
+
+
         fast_reward, _ = self.calculate_reward(useful_prob)
         return fast_reward, {'r_useful': useful_prob}
 
