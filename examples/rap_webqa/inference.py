@@ -58,8 +58,9 @@ def rap_gsm8k(base_model: LanguageModel,
               path_to_webqa: str = None, # TODO
               **search_algo_params):
     if not disable_log:
+        time_prefix = datetime.now().strftime("%m%d%Y-%H%M%S")
         if log_dir is None:
-            log_dir = f'logs/webqa_{search_algo.__name__}/{datetime.now().strftime("%m%d%Y-%H%M%S")}'
+            log_dir = f'logs/webqa_{search_algo.__name__}/{time_prefix}'
         #os.makedirs(log_dir, exist_ok=resume > 0)
         os.makedirs(log_dir, exist_ok=True)
         os.makedirs(os.path.join(log_dir, 'algo_output'), exist_ok=True)
@@ -125,13 +126,20 @@ def rap_gsm8k(base_model: LanguageModel,
             selected_indices = [resume]
         if isinstance(resume, list):
             selected_indices = list(range(resume[0], resume[1]+1))
-        
+        # - guid
+        # - sources
+        # - answer
+        # - ground-truth
+        # - question
+        # - Qcate
         
         selected_data = [
             {
                 "index": idx, 
                 "question": data[idx]["Q"], 
-                "answer": data[idx]["A"],
+                "Guid": data[idx]["Guid"], 
+                "ground-truth": data[idx]["A"],
+                "Qcate": data[idx]["Qcate"],
                 "path": path_to_webqa
             } 
             for idx in selected_indices if idx < len(data)
@@ -172,13 +180,16 @@ def rap_gsm8k(base_model: LanguageModel,
         # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
         prediction = algo_output.terminal_state[-1].main_answer
         print(f'Prediction: {prediction}')
-        print(f'Answer: {example["answer"]}')
+        print(f'Answer: {example["ground-truth"]}')
         log_str = f'Case {i}'
         webqa_results.update({
-            example["index"]: {
-                "prediction": prediction,
-                "answer": example["answer"],
+            example["Guid"]: {
+                "answer": prediction,
+                "sources": [], # TODO
+                "ground-truth": example["ground-truth"],
                 "question": example["question"], 
+                "Qcate": example["Qcate"],
+                "Guid": example["Guid"],   
             }
         })
 
@@ -188,16 +199,44 @@ def rap_gsm8k(base_model: LanguageModel,
                 print(log_str, file=f)
               
             # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
-            with open(os.path.join(log_dir, 'algo_output', f'{example["index"]  }.pkl'), 'wb') as f:
+            with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["index"]}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
                 # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
-                with open(os.path.join(log_dir, 'algo_output', f'{example["index"]}.json'), 'w') as f: 
+                with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["index"]}.json'), 'w') as f: 
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
-    with open(os.path.join(log_dir, f'webqa_results.json'), 'w') as json_file:
+    with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.json'), 'w') as json_file:
         json.dump(webqa_results, json_file, indent=4)
+
+    # TODO conversion of json to tsv
+    # should be list of dicts
+    tsv_json = [
+        {
+            "Guid" : Guid,
+            "Qcate" : webqa_results[Guid]["Qcate"],
+            "Q" : webqa_results[Guid]["question"],
+            "A" : webqa_results[Guid]["ground-truth"],
+            "Keywords_A" : "",
+            "Output_conf" : "",
+            "Output" : [webqa_results[Guid]["answer"]],
+        } for Guid in webqa_results
+    ]
+
+    import csv
+    with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.tsv'), 'w', newline='') as tsv_file:
+        # Create a CSV Writer object with tab delimiter
+        # columns 
+        # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
+        writer = csv.DictWriter(tsv_file, fieldnames=tsv_json[0].keys(), delimiter='\t')
+
+        # Write header
+        writer.writeheader()
+
+        # Write data
+        writer.writerows(tsv_json)
+
 
 if __name__ == '__main__':
     import os
