@@ -84,32 +84,7 @@ def rap_gsm8k(base_model: LanguageModel,
     else:
         aggregator = None
 
-    # dataset = load_dataset("gsm8k", "main", split=f'test[{resume}:]')
-    #### one question
-    # dataset = [{
-    #     "question" : "How much longer is the Nevezis than the A1 Kaunas-Klaipeda highway?",
-    #     "answer" : "\n#### 20"
-    # }]
-
-    # dataset = [{
-    #     "question" : "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?",
-    #     "answer" : "\n#### East"
-    # }]
-
-    # dataset = [{
-    #     "question" : "\"Does the \"Summer, Lake Ontario\" painting by Jasper Francis Cropsey or the \"Sunrise Over Diamond Head\" painting by Jules Tavernier show a more cloudy sky?\"",
-    #     "answer" : "\n#### East"
-    # }]
-    # dataset = [{
-    #     "question" : "In August 2018 what university began offering courses in the community with ZIP code 29707?",
-    #     "answer" : "\n#### East"
-    # }]
-
-
-    # dataset = [{
-    #     "question" : "Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?",
-    #     "answer" : "No, the Fifth Dynasty lived from the 25th-24th century BC which is hundreds of years before Heraclius was active."
-    # }]
+    
  
     HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
     print("HF_memory_footprint: ", HF_memory_footprint)
@@ -184,12 +159,16 @@ def rap_gsm8k(base_model: LanguageModel,
         log_str = f'Case {i}'
         webqa_results.update({
             example["Guid"]: {
-                "answer": prediction,
-                "sources": [], # TODO
-                "ground-truth": example["ground-truth"],
-                "question": example["question"], 
-                "Qcate": example["Qcate"],
+                # for manual inspection
                 "Guid": example["Guid"],   
+                "Qcate": example["Qcate"],
+                "Q": example["question"], 
+                "A": example["ground-truth"],
+                "Keywords_A" : "TBD",
+                # "Output_conf" : [1], # not really needed
+                # needed for online evaluation
+                "answer": prediction[0], # TODO supposed to not be list
+                "sources": [], # TODO
             }
         })
 
@@ -199,43 +178,62 @@ def rap_gsm8k(base_model: LanguageModel,
                 print(log_str, file=f)
               
             # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
-            with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["index"]}.pkl'), 'wb') as f:
+            with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
                 # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
-                with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["index"]}.json'), 'w') as f: 
+                with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.json'), 'w') as f: 
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
-    with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.json'), 'w') as json_file:
+    with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
         json.dump(webqa_results, json_file, indent=4)
 
-    # TODO conversion of json to tsv
-    # should be list of dicts
-    tsv_json = [
-        {
-            "Guid" : Guid,
-            "Qcate" : webqa_results[Guid]["Qcate"],
-            "Q" : webqa_results[Guid]["question"],
-            "A" : webqa_results[Guid]["ground-truth"],
-            "Keywords_A" : "",
-            "Output_conf" : "",
-            "Output" : [webqa_results[Guid]["answer"]],
-        } for Guid in webqa_results
-    ]
+    # create offline version 
+    # webqa_results_offline = {}
+    # for key in webqa_results:
+    #     webqa_results_offline.update({
+    #         key: {
+    #             "Guid": key,  
+    #             "Qcate" : webqa_results[key]["Qcate"], 
+    #             "Q" : webqa_results[key]["question"],
+    #             "A" : webqa_results[key]["ground-truth"], 
+    #             "Keywords_A" : "TBD",
+    #             # "Output_conf" : [1], # not really needed
+    #             "Output" : webqa_results[key]["answer"], # is already a list                
+    #         }
+    #     }
+    # )
+    # with open(os.path.join(log_dir, f'{time_prefix}-webqa-offline.json'), 'w') as json_file:
+    #     json.dump(webqa_results_offline, json_file, indent=4)
 
-    import csv
-    with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.tsv'), 'w', newline='') as tsv_file:
-        # Create a CSV Writer object with tab delimiter
-        # columns 
-        # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
-        writer = csv.DictWriter(tsv_file, fieldnames=tsv_json[0].keys(), delimiter='\t')
 
-        # Write header
-        writer.writeheader()
+    # # TODO conversion of json to tsv
+    # # should be list of dicts
+    # tsv_json = [
+    #     {
+    #         "Guid" : Guid,
+    #         "Qcate" : webqa_results[Guid]["Qcate"],
+    #         "Q" : webqa_results[Guid]["question"],
+    #         "A" : webqa_results[Guid]["ground-truth"][0], # is already a list
+    #         "Keywords_A" : "TBD",
+    #         "Output_conf" : [1],
+    #         "Output" : webqa_results[Guid]["answer"], # is already a list
+    #     } for Guid in webqa_results
+    # ]
 
-        # Write data
-        writer.writerows(tsv_json)
+    # import csv
+    # with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.tsv'), 'w', newline='') as tsv_file:
+    #     # Create a CSV Writer object with tab delimiter
+    #     # columns 
+    #     # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
+    #     writer = csv.DictWriter(tsv_file, fieldnames=tsv_json[0].keys(), delimiter='\t')
+
+    #     # Write header
+    #     writer.writeheader()
+
+    #     # Write data
+    #     writer.writerows(tsv_json)
 
 
 if __name__ == '__main__':

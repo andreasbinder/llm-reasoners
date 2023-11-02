@@ -85,7 +85,9 @@ def normalize_text(s):
 def compute_vqa_metrics(cands, a, exclude="", domain=None):
     if len(cands) == 0: return (0,0,0)
     # TODO probaly would not like splitting here
-    bow_a = normalize_text(a).split()
+    if isinstance(a, list):
+        a = ' '.join(a)
+    bow_a = normalize_text(a).split() #if isinstance(a, str) else normalize_text(a).split() #[normalize_text(_a).split() for _a in a]
     F1 = []
     EM = 0
     RE = []
@@ -143,12 +145,12 @@ print("Use categories: ", Qcate_breakdown)
 print("Use normalization = ", not args.no_norm)
 print("Output_idx = ", args.output_idx)
 # Please change the path to your output folder
-with open(os.path.join(args.dir, args.file), "r") as fp:
-    lines = fp.readlines()
-    header = lines[0].strip().split('\t')
-    rows = lines[1:]
-key = dict(zip(header, range(len(header))))
-pprint(key)
+# with open(os.path.join(args.dir, args.file), "r") as fp:
+#     lines = fp.readlines()
+#     header = lines[0].strip().split('\t')
+#     rows = lines[1:]
+# key = dict(zip(header, range(len(header))))
+# pprint(key)
 F1_avg_scores = {'All':[], 'number':[], 'YesNo':[], 'choose':[], 'color':[], 'shape':[], 'Others':[], 'text':[]}
 F1_max_scores = {'All':[], 'number':[], 'YesNo':[], 'choose':[], 'color':[], 'shape':[], 'Others':[], 'text':[]}
 EM_scores = {'All':[], 'number':[], 'YesNo':[], 'choose':[], 'color':[], 'shape':[], 'Others':[], 'text':[]}
@@ -167,26 +169,48 @@ output_KA = []
 output_G = []
 output_QC = []
 # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
-for r in tqdm(rows):
+from pathlib import Path
+rows = json.loads(Path(args.file).read_text())
+for key in tqdm(rows):
     
-    datum = r.strip().split('\t')
-    Qcate = datum[key['Qcate']]
+    Qcate = rows[key]['Qcate']
     if (not 'all' in Qcate_breakdown) and (not Qcate in Qcate_breakdown): continue
-    print("Data to be loaded as JSON:", repr(datum[key['Output']]))
-    O = json.loads(datum[key['Output']])
+    print("Data to be loaded as JSON:", repr(rows[key]['answer']))
+    # O = json.loads(rows[key['Output']])
+    O = [rows[key]['answer']] # is a list
     C = [O[args.output_idx]]
-    Keywords_A = datum[key['Keywords_A']]
-    A = json.loads(datum[key['A']])
+    Keywords_A = rows[key]['Keywords_A']
+    #A = json.loads(datum[key['A']]) # TODO
+    A = rows[key]['A'] # TODO A already list
     #normalizer = guid2norm[datum[key['Guid']]]
     normalizer = compute_bartscore_ParaBank(A, A)
     
-    output_Q.append(datum[key['Q']])
+    output_Q.append(rows[key]['Q'])
     output_A.append(A)
     output_N.append(normalizer)
     output_O.append(O)
     output_KA.append(Keywords_A)
-    output_G.append(datum[key['Guid']])
+    output_G.append(rows[key]['Guid'])
     output_QC.append(Qcate)
+
+    # datum = r.strip().split('\t')
+    # Qcate = datum[key['Qcate']]
+    # if (not 'all' in Qcate_breakdown) and (not Qcate in Qcate_breakdown): continue
+    # print("Data to be loaded as JSON:", repr(datum[key['Output']]))
+    # O = json.loads(datum[key['Output']])
+    # C = [O[args.output_idx]]
+    # Keywords_A = datum[key['Keywords_A']]
+    # A = json.loads(datum[key['A']])
+    # #normalizer = guid2norm[datum[key['Guid']]]
+    # normalizer = compute_bartscore_ParaBank(A, A)
+    
+    # output_Q.append(datum[key['Q']])
+    # output_A.append(A)
+    # output_N.append(normalizer)
+    # output_O.append(O)
+    # output_KA.append(Keywords_A)
+    # output_G.append(datum[key['Guid']])
+    # output_QC.append(Qcate)
     
     if args.no_norm:
         score = min(1, np.max(compute_bartscore_ParaBank(C*len(A), A)))
@@ -249,7 +273,7 @@ if not 'all' in Qcate_breakdown: args.file = args.file.split(".")[0] + "_{}".for
 
 if args.output_idx > 0: args.file = args.file.replace(".tsv", "_{}.tsv".format(args.output_idx))
 
-with open(os.path.join(args.dir, args.file.replace(".tsv", ".txt")), "w") as f:
+with open(os.path.join(args.dir, args.file.replace(".json", ".txt")), "w") as f:
     f.write(datetime.now(tz=timezone('US/Eastern')).strftime("%y-%m-%d %H:%M:%S") + '\n')
     f.write('\nUse Q categories: {}\nUse normalization = {}\n#Eval_samples = {}\n'.format(Qcate_breakdown, not args.no_norm, len(mul_scores['All'])))
     

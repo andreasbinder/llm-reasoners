@@ -67,7 +67,7 @@ class GSM8kConfig(SearchConfig):
 
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
-        temperature = 0 if at_depth_limit else self.temperature
+        temperature = 0.0001 if at_depth_limit else self.temperature #TODO
         selected_actions = []
 
         max_attempts = 5
