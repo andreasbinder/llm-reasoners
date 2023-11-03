@@ -18,19 +18,22 @@ import utils
 def node_visualizer(x: MCTSNode[GSM8kState, GSM8kAction]):
     if not x.state:
         return {}
-    # return {"question": x.state[-1].sub_question, "answer": x.state[-1].sub_answer}
-    # match states
     if x.state[-1].state_type == "ANSWER":
-        return {"question": x.state[-1].main_question, "answer": x.state[-1].main_answer}
+        return {
+            "question": x.state[-1].main_question, 
+            "answer": x.state[-1].main_answer
+            }
     elif x.state[-1].state_type == "RETRIEVE":
         #, "retrieved_snippets": x.state[-1].retrieved_snippets
         return {
             "context": x.state[-1].context,
             "snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
             "flags": x.state[-1].flags
-        } 
+            } 
     elif x.state[-1].state_type == "INVALID":
-        return {"content": "INVALID"} 
+        return {
+            "content": "INVALID"
+            } 
 
 
 def rap_gsm8k(base_model: LanguageModel,
@@ -89,7 +92,6 @@ def rap_gsm8k(base_model: LanguageModel,
     HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
     print("HF_memory_footprint: ", HF_memory_footprint)
     
-    #path_to_webqa = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
     def load_webqa_dataset(path_to_webqa, resume):
         from pathlib import Path
         data = json.loads(Path(path_to_webqa).read_text())
@@ -101,12 +103,6 @@ def rap_gsm8k(base_model: LanguageModel,
             selected_indices = [resume]
         if isinstance(resume, list):
             selected_indices = list(range(resume[0], resume[1]+1))
-        # - guid
-        # - sources
-        # - answer
-        # - ground-truth
-        # - question
-        # - Qcate
         
         selected_data = [
             {
@@ -128,35 +124,16 @@ def rap_gsm8k(base_model: LanguageModel,
     if len(dataset) < 3:
         print("dataset: ", dataset)
 
-
-    correct_count = 0
-    # for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
-    #                                  desc='WebQA', disable=disable_tqdm)):
     for i, example in enumerate(tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm)):
-        print("#" * 25 + "Case Number: "+ str(i) + "#" * 25)
+        print("#" * 25 + "Case Number: "+ str(example["Guid"]) + "#" * 25)
         
-        # algo_output = reasoner(example["question"])
         algo_output = reasoner(example)
 
-        # TODO only necessary for evaluation -> do our own
-        # TODO what does the aggregator do?
-        # if aggregate:
-        #     output = aggregator(algo_output.tree_state)
-        # elif algo_output.terminal_state is None:
-        #     output = None
-        # else:
-        #     output = utils.retrieve_answer(algo_output.terminal_state)
-        # answer = utils.retrieve_answer_from_dataset(example["answer"])
-        # correct = utils.judge_answer(output, answer)
-
-        # correct_count += correct
-        # accuracy = correct_count / (i + 1)
-        # log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
         prediction = algo_output.terminal_state[-1].main_answer
         print(f'Prediction: {prediction}')
         print(f'Answer: {example["ground-truth"]}')
-        log_str = f'Case {i}'
+        log_str = f'Guid: {example["Guid"]} Prediction: {prediction} Ground-truth: {example["ground-truth"]}'
         webqa_results.update({
             example["Guid"]: {
                 # for manual inspection
@@ -171,6 +148,9 @@ def rap_gsm8k(base_model: LanguageModel,
                 "sources": [], # TODO
             }
         })
+        # save after every example in case of intermediate failures
+        with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
+            json.dump(webqa_results, json_file, indent=4)
 
         tqdm.write(log_str)
         if not disable_log:
@@ -188,24 +168,6 @@ def rap_gsm8k(base_model: LanguageModel,
 
     with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
         json.dump(webqa_results, json_file, indent=4)
-
-    # create offline version 
-    # webqa_results_offline = {}
-    # for key in webqa_results:
-    #     webqa_results_offline.update({
-    #         key: {
-    #             "Guid": key,  
-    #             "Qcate" : webqa_results[key]["Qcate"], 
-    #             "Q" : webqa_results[key]["question"],
-    #             "A" : webqa_results[key]["ground-truth"], 
-    #             "Keywords_A" : "TBD",
-    #             # "Output_conf" : [1], # not really needed
-    #             "Output" : webqa_results[key]["answer"], # is already a list                
-    #         }
-    #     }
-    # )
-    # with open(os.path.join(log_dir, f'{time_prefix}-webqa-offline.json'), 'w') as json_file:
-    #     json.dump(webqa_results_offline, json_file, indent=4)
 
 
 if __name__ == '__main__':
