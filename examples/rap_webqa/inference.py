@@ -208,34 +208,6 @@ def rap_gsm8k(base_model: LanguageModel,
     #     json.dump(webqa_results_offline, json_file, indent=4)
 
 
-    # # TODO conversion of json to tsv
-    # # should be list of dicts
-    # tsv_json = [
-    #     {
-    #         "Guid" : Guid,
-    #         "Qcate" : webqa_results[Guid]["Qcate"],
-    #         "Q" : webqa_results[Guid]["question"],
-    #         "A" : webqa_results[Guid]["ground-truth"][0], # is already a list
-    #         "Keywords_A" : "TBD",
-    #         "Output_conf" : [1],
-    #         "Output" : webqa_results[Guid]["answer"], # is already a list
-    #     } for Guid in webqa_results
-    # ]
-
-    # import csv
-    # with open(os.path.join(log_dir, f'{time_prefix}-webqa_results.tsv'), 'w', newline='') as tsv_file:
-    #     # Create a CSV Writer object with tab delimiter
-    #     # columns 
-    #     # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
-    #     writer = csv.DictWriter(tsv_file, fieldnames=tsv_json[0].keys(), delimiter='\t')
-
-    #     # Write header
-    #     writer.writeheader()
-
-    #     # Write data
-    #     writer.writerows(tsv_json)
-
-
 if __name__ == '__main__':
     import os
     import sys
