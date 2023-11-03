@@ -170,7 +170,7 @@ output_G = []
 output_QC = []
 # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
 from pathlib import Path
-rows = json.loads(Path(args.file).read_text())
+rows = json.loads(Path(os.path.join(args.dir, args.file)).read_text())
 for key in tqdm(rows):
     
     Qcate = rows[key]['Qcate']

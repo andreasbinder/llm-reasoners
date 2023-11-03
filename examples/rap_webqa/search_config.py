@@ -99,28 +99,14 @@ class GSM8kConfig(SearchConfig):
             else:
                 print("No valid action was found after maximum attempts.")
                 selected_actions += ["INVALID"]
-        # print("#" * 25 + "Action Selection Output" + "#" * 25)
-        # print(outputs)
 
-        # #first_outputs = [find_first_appearance(output) for output in outputs]
-        # keywords = [utils.find_first_appearance(selected_action, self.prompt["actions"].keys()) for selected_action in selected_actions]
         keywords = selected_actions
         
-
-        # keywords = ['DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE', 'DECOMPOSE']
-        # keywords = ['RETRIEVE', 'RETRIEVE', 'RETRIEVE', 'RETRIEVE']
-        # keywords = ['RETRIEVE', 'RETRIEVE', 'DECOMPOSE', 'DECOMPOSE']
-        # result = ['R1', 'R2', 'D11','D12', 'D21','D22']
         print("keywords")
         print(keywords)
         
         prompts_per_keyword = [utils.action_prompt(self.prompt, self.example["question"], state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
-        #prompts_per_keyword = ["Generate a textual query for finding the university that started offering courses in the community with ZIP code 29707 in August 2018.\n"] * 4
-        #prompts_per_keyword = ["Generate a subquestion related to the following question: 'In August 2018, what university began offering courses in the community with ZIP code 29707?\n"] * 4 
-        #prompts_per_keyword = ["Generate a subquestion that gives a partial answer to the following question: Did Emperor Heraclius fight against the Fifth Dynasty of ancient Egypt?\n"] * 4 
-        #################
-
-        #################
+        
         print("#" * 25 + "Action Input" + "#" * 25)
         print(prompts_per_keyword)
 
@@ -142,15 +128,10 @@ class GSM8kConfig(SearchConfig):
         print("#" * 25 + "Action Output" + "#" * 25)
         print(actions)
 
-        # import sys
-        # sys.exit()
-
         actions = [action.strip() for action in actions]
         if at_depth_limit:
-            
-            #outputs = ['ANSWER' for output in outputs]
+
             actions = ['ANSWER' + ': ' + self.example["question"] for _ in actions]
-        # TODO understand use
 
         # set does not guarantee order, but dict does guarantee
         # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes

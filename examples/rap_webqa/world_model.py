@@ -60,79 +60,113 @@ class GSM8kPrompt(TypedDict):
     subquestion_prefix: str
     answer_prefix: str
     overall_question_prefix: str
+        
+import os
+from langchain.document_loaders import JSONLoader
+from langchain.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceInferenceAPIEmbeddings, HuggingFaceEmbeddings
+from pathlib import Path
+import json
+
+# Make sure to define or import RetrievalResult somewhere in your code.
 
 class Retrieval():
-    def __init__(self, example) -> None:
-
+    def __init__(self, example, use_api=True):
+        """
+        Initialize the Retrieval class with given example configuration.
+        :param example: Example configuration for retrieval.
+        :param use_api: A flag to indicate whether to use the HuggingFace API or local embeddings.
+        """
         self.example = example
+        self.use_api = use_api
+        self.documents = None  # Initialize to None or a sensible default
+        self.embeddings = None
+        self.vectorstore = None
 
-        from langchain.document_loaders import JSONLoader
-        from langchain.embeddings import HuggingFaceEmbeddings
-        from langchain.vectorstores import FAISS
-        
+        self.huggingface_token = self.setup_environment()  # Set up tokens or other configurations
+        self.load_documents()     # This will update self.documents
+        self.setup_embeddings()   # Set up the embedding mechanism
+        self.setup_vectorstore()  # Create the vector store based on loaded documents
 
-        # path = '/home/stud/abinder/Multimodal-LLMs-for-webscale-Questions-Answering/data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
-        path = 'data/n_samples_50_split_val_solution_txt_seed_42_1691423190.7960498_samples.json'
+
+
+    def setup_environment(self):
+        """
+        Setup environment variables and other configurations.
+        """
+        if self.use_api:
+            huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
+            if huggingface_token is None:
+                raise ValueError(
+                    "HUGGINGFACE_TOKEN not set. Please set it in your environment variables."
+                )
+            return huggingface_token
+        return None
+
+    def load_documents(self):
+        """
+        Load documents from a JSON file based on the given jq schema.
+        """
         path = self.example['path']
         index = self.example['index']
 
-        
         metadata_func_with_extra = self.create_metadata_func(path, index)
-        # jq_schema='.[1].txt_posFacts[], .[1].txt_negFacts[]',
-        loader = JSONLoader(
+        self.loader = JSONLoader(
             file_path=path,
             jq_schema=f'.[{index}].txt_posFacts[], .[{index}].txt_negFacts[]',
             content_key="fact",
             text_content=True,
             metadata_func=metadata_func_with_extra
         )
-        documents = loader.load()      
+        self.documents = self.loader.load()
 
+    def setup_embeddings(self):
+        """
+        Setup the embeddings for the document retrieval.
+        """
         model_name = "sentence-transformers/all-mpnet-base-v2"
-        model_kwargs = {"device": "cuda"}
+        model_kwargs = {"device": "cuda"}  # Assuming you want to use CUDA for local embedding calculation
 
-        from langchain.embeddings import HuggingFaceInferenceAPIEmbeddings
+        if self.use_api:
+            self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+                api_key=self.huggingface_token,  # Use the stored token
+                model_name=model_name
+            )
+        else:
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs=model_kwargs
+            )
 
-
-        import os
-        # key should be inferred from bashrc
-        HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", None)
-        if HUGGINGFACE_TOKEN is None:
-            raise ValueError("HUGGINGFACE_TOKEN not set, please run `export HUGGINGFACE_TOKEN=<your key>` to ser it")
-       
-        embeddings_api = HuggingFaceInferenceAPIEmbeddings(
-            api_key=HUGGINGFACE_TOKEN,
-            model_name=model_name
-        )
-
-        #embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
-        embeddings = embeddings_api
-        # storing embeddings in the vector store
-        vectorstore = FAISS.from_documents(documents, embeddings)
-
-        self.documents = documents
-        self.embeddings = embeddings
-        self.vectorstore = vectorstore
+    def setup_vectorstore(self):
+        """
+        Setup the vector store for storing and retrieving document embeddings.
+        """
+        self.vectorstore = FAISS.from_documents(self.documents, self.embeddings)
 
     def create_metadata_func(self, path, index):
-        from pathlib import Path
-        import json
+        """
+        Create a metadata function that adds additional metadata to the records.
+        """
         parent = json.loads(Path(path).read_text())[index]
+
         def metadata_func(record: dict, metadata: dict):
-            # Use extra_param here along with record and metadata
+            """
+            Add 'pos' or 'neg' flag to the metadata based on the snippet category.
+            """
             snippet_id = record.get("snippet_id")
             flag = None
 
-            # Search in positive facts
-            for record in parent['txt_posFacts']:
-                if record['snippet_id'] == snippet_id:
+            # Search in positive facts for a matching snippet_id
+            for pos_record in parent['txt_posFacts']:
+                if pos_record['snippet_id'] == snippet_id:
                     flag = 'pos'
                     break
 
-            # Search in negative facts
-            if flag is None:  # continue searching only if not found in positive facts
-                for record in parent['txt_negFacts']:
-                    if record['snippet_id'] == snippet_id:
+            # If not found in positive facts, search in negative facts
+            if flag is None:
+                for neg_record in parent['txt_negFacts']:
+                    if neg_record['snippet_id'] == snippet_id:
                         flag = 'neg'
                         break
             
@@ -142,9 +176,24 @@ class Retrieval():
 
         return metadata_func
 
+    def format_retrieval_result(self, query, docs):
+        """
+        Format the retrieval results and create a RetrievalResult object.
+        """
+        content_str = ','.join([f'{i}) ' + doc.page_content for i, doc in enumerate(docs)])
+        snippet_ids = [doc.metadata['snippet_id'] for doc in docs]
+        flags = [doc.metadata['flag'] for doc in docs]
 
-    def retrieve(self, query: str) -> str:
-        #query = "Where are the best tree travelers in the animal kingdom found in relation to the Salween River in Myanmar?"
+        result = RetrievalResult(
+            state_type = "RETRIEVE",
+            context = query, 
+            retrieved_snippets = content_str, 
+            retrieved_sources = snippet_ids, 
+            flags = flags
+        )
+        return result
+
+    def retrieve(self, query: str):
         query = query.replace("RETRIEVE: ", "", 1)
 
         print("#" * 25 + "RETRIEVE Input" + "#" * 25)
@@ -152,37 +201,55 @@ class Retrieval():
         
         docs = self.vectorstore.similarity_search(query)
 
-        result = RetrievalResult(
-            "RETRIEVE",
-            query, 
-            ','.join([f'{i}) ' + doc.page_content \
-                                            for i, doc in enumerate(docs)]), 
-            [doc.metadata['snippet_id'] for doc in docs], 
-            [doc.metadata['flag'] for doc in docs])
+        result = self.format_retrieval_result(query, docs)
 
         print("#" * 25 + "RETRIEVE Output" + "#" * 25)
-        print(','.join([f'{i}) ' + doc.page_content \
-                                            for i, doc in enumerate(docs)]))
-
+        print(result.retrieved_snippets)  
 
         return result
-        
+
 
 class Answer():
+    """
+    A class to generate answers for given prompts using a machine learning model.
+    
+    Attributes:
+        base_model (BaseModel): The machine learning model used to generate answers.
+        temperature (float): The sampling temperature to use when generating answers.
+        question (str): The question for which the answer is generated.
+    """
+
     def __init__(self, base_model, temperature, example) -> None:
+        """
+        Constructs all the necessary attributes for the AnswerGenerator object.
+        
+        Parameters:
+            base_model (BaseModel): The pre-trained base model for generating answers.
+            temperature (float): A coefficient to control the randomness of predictions
+                                 by scaling the logits before applying softmax.
+            example (dict): A dictionary containing a 'question' key.
+        """
         self.base_model = base_model
         self.temperature = temperature
         self.question = example['question']
 
-    def answer(self, prompt, example, state, action: str) -> str:
+    def answer(self, prompt, state: str) -> str:
+        """
+        Generates an answer for the given prompt.
 
+        Parameters:
+            prompt (str): The prompt to which the model should respond.
+            state (dict): The current state information to be considered by the model.
+
+        Returns:
+            AnswerResult: An object containing the action, question, generated answer, and confidence level.
+        """
         
         model_input = utils.answer_prompt(prompt, self.question, state, "ANSWER")
         print("#" * 25 + "ANSWER Input" + "#" * 25)
         print(model_input)
 
-        num = 1
-        answer = self.base_model.generate([model_input] * num,
+        answer = self.base_model.generate([model_input],
                                             hide_input=True,
                                             do_sample=True,
                                             temperature=self.temperature,
@@ -214,7 +281,7 @@ class Toolbox():
         keyword = utils.find_first_appearance(action, self.keywords)
         
         if keyword == 'ANSWER':
-            return self.answer.answer(prompt, example, state, action)
+            return self.answer.answer(prompt, state)
         elif keyword == 'RETRIEVE':
             return self.retrieval.retrieve(action)
         elif keyword == 'INVALID':
@@ -248,13 +315,8 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
         self.early_stop_base = early_stop_base if early_stop_base is not None else n_confidence
         self.early_stop_threshold = early_stop_threshold
 
-        # self.init_tools()
-
     def init_state(self) -> list:
         return []
-    
-    # def init_tools(self):
-    #     self.tools = Toolbox(self)
 
     def update_example(self, example: str) -> None:
         super().update_example(example)
