@@ -71,14 +71,14 @@ import json
 # Make sure to define or import RetrievalResult somewhere in your code.
 
 class Retrieval():
-    def __init__(self, example, use_api=True):
+    def __init__(self, example, hyparams):
         """
         Initialize the Retrieval class with given example configuration.
         :param example: Example configuration for retrieval.
         :param use_api: A flag to indicate whether to use the HuggingFace API or local embeddings.
         """
         self.example = example
-        self.use_api = use_api
+        self.use_api = hyparams['use_api'] 
         self.documents = None  # Initialize to None or a sensible default
         self.embeddings = None
         self.vectorstore = None
@@ -194,7 +194,7 @@ class Retrieval():
         return result
 
     def retrieve(self, query: str):
-        query = query.replace("RETRIEVE: ", "", 1)
+        #query = query.replace("RETRIEVE: ", "", 1)
 
         print("#" * 25 + "RETRIEVE Input" + "#" * 25)
         print(query)
@@ -266,9 +266,11 @@ class Toolbox():
 
         self.world_model = world_model
         self.example = world_model.example
+        self.prompt = world_model.prompt
 
         self.retrieval = Retrieval(
-            example = self.example
+            example = self.example,
+            hyparams = self.prompt["actions"]["RETRIEVE"]["hyparams"]
         )
         self.answer = Answer(
             base_model=self.world_model.base_model,
@@ -278,12 +280,14 @@ class Toolbox():
         self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID']
 
     def execute_tool(self, prompt, example, state, action: str) -> str:
-        keyword = utils.find_first_appearance(action, self.keywords)
-        
+        #keyword = utils.find_first_appearance(action, self.keywords)
+        keyword = action[0]
+
         if keyword == 'ANSWER':
             return self.answer.answer(prompt, state)
         elif keyword == 'RETRIEVE':
-            return self.retrieval.retrieve(action)
+            #return self.retrieval.retrieve(action)
+            return self.retrieval.retrieve(action[1])
         elif keyword == 'INVALID':
             return InvalidResult("INVALID", "INVALID")
         else:

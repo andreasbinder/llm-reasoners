@@ -35,6 +35,10 @@
         },
         
         "RETRIEVE": {
+            "hyparams": {
+                "use_api": false
+
+            },
             "description": "Create a textual query to answer an overall question.",
             "history": "This context you can use to formulate the query:",
             "examples": "Examples of retrieved information:",

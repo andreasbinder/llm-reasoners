@@ -113,9 +113,12 @@ class GSM8kConfig(SearchConfig):
         actions = []
         for keyword, prompt in zip(keywords, prompts_per_keyword):
             if keyword == 'ANSWER':
-                actions += ['ANSWER' + ': ' + self.example["question"]]
+                #actions += ['ANSWER' + ': ' + self.example["question"]]
+                actions += [('ANSWER', self.example["question"])]
+            
             elif keyword == 'INVALID':
-                actions += ['INVALID']
+                #actions += ['INVALID']
+                actions += [('INVALID', 'No valid Keyword generated')]
             else:
                 model_output = self.base_model.generate([prompt],
                                                     hide_input=True,
@@ -123,16 +126,17 @@ class GSM8kConfig(SearchConfig):
                                                     temperature=temperature,
                                                     eos_token_id='\n').text
                 
-                actions += [keyword + ': ' + model_output[0]]
+                # actions += [keyword + ': ' + model_output[0]]
+                actions += [(keyword, model_output[0])]
                 
         print("#" * 25 + "Action Output" + "#" * 25)
         print(actions)
 
-        actions = [action.strip() for action in actions]
+        # actions = [action.strip() for action in actions]
         if at_depth_limit:
 
-            actions = ['ANSWER' + ': ' + self.example["question"] for _ in actions]
-
+            # actions = ['ANSWER' + ': ' + self.example["question"] for _ in actions]
+            actions = [('ANSWER', self.example["question"]) for _ in actions]
         # set does not guarantee order, but dict does guarantee
         # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes
         actions = list(dict.fromkeys(actions))
@@ -140,7 +144,8 @@ class GSM8kConfig(SearchConfig):
 
     def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
         
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
+        #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action[1])
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
         print(model_input)
