@@ -170,7 +170,8 @@ output_G = []
 output_QC = []
 # Guid	Qcate	Q	A	Keywords_A	Output_conf	Output
 from pathlib import Path
-rows = json.loads(Path(os.path.join(args.dir, args.file)).read_text())
+#rows = json.loads(Path(os.path.join(args.dir, args.file)).read_text())
+rows = json.loads(Path(args.file).read_text())
 for key in tqdm(rows):
     
     Qcate = rows[key]['Qcate']
@@ -273,7 +274,8 @@ if not 'all' in Qcate_breakdown: args.file = args.file.split(".")[0] + "_{}".for
 
 if args.output_idx > 0: args.file = args.file.replace(".tsv", "_{}.tsv".format(args.output_idx))
 
-with open(os.path.join(args.dir, args.file.replace(".json", ".txt")), "w") as f:
+#with open(os.path.join(args.dir, args.file.replace(".json", ".txt")), "w") as f:
+with open(args.file.replace(".json", ".txt"), "w") as f:
     f.write(datetime.now(tz=timezone('US/Eastern')).strftime("%y-%m-%d %H:%M:%S") + '\n')
     f.write('\nUse Q categories: {}\nUse normalization = {}\n#Eval_samples = {}\n'.format(Qcate_breakdown, not args.no_norm, len(mul_scores['All'])))
     

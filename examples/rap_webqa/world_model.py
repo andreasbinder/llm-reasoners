@@ -1,5 +1,5 @@
 import io
-from typing import NamedTuple, TypedDict, Union
+from typing import NamedTuple, TypedDict, Union, Tuple
 from collections import defaultdict
 from reasoners import WorldModel, LanguageModel
 import utils
@@ -51,7 +51,10 @@ class InvalidResult(NamedTuple):
 
 
 GSM8kState = list[Union[RetrievalResult, DecomposeResult, AnswerResult, InvalidResult]]
-GSM8kAction = str
+# WebQAAction = str
+action_keyword = str
+action_details = str
+WebQAAction = Tuple[action_keyword, action_details]
 
 
 class GSM8kPrompt(TypedDict):
@@ -281,13 +284,13 @@ class Toolbox():
 
     def execute_tool(self, prompt, example, state, action: str) -> str:
         #keyword = utils.find_first_appearance(action, self.keywords)
-        keyword = action[0]
+        keyword, details = action
 
         if keyword == 'ANSWER':
             return self.answer.answer(prompt, state)
         elif keyword == 'RETRIEVE':
             #return self.retrieval.retrieve(action)
-            return self.retrieval.retrieve(action[1])
+            return self.retrieval.retrieve(details)
         elif keyword == 'INVALID':
             return InvalidResult("INVALID", "INVALID")
         else:
@@ -295,7 +298,7 @@ class Toolbox():
 
 
 
-class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
+class GSM8kWorldModel(WorldModel[GSM8kState, WebQAAction]):
     """
     GSM8k World Model
     State: [[sub_question_1, sub_answer_1, confidence_1], [sub_question_2, sub_answer_2, confidence_2], ...]
@@ -327,7 +330,7 @@ class GSM8kWorldModel(WorldModel[GSM8kState, GSM8kAction]):
         self.tools = Toolbox(self)
 
 
-    def step(self, state: GSM8kState, action: GSM8kAction) -> tuple[GSM8kState, dict]:
+    def step(self, state: GSM8kState, action: WebQAAction) -> tuple[GSM8kState, dict]:
         state = state.copy()
 
         result = self.tools.execute_tool(self.prompt, self.example, state, action)

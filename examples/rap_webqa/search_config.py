@@ -4,7 +4,7 @@ from typing import TypedDict, Optional
 
 import numpy as np
 
-from world_model import GSM8kState, GSM8kAction, GSM8kPrompt, DecomposeResult, RetrievalResult
+from world_model import GSM8kState, WebQAAction, GSM8kPrompt, DecomposeResult, RetrievalResult
 from reasoners import SearchConfig, LanguageModel
 
 import utils
@@ -55,7 +55,7 @@ class GSM8kConfig(SearchConfig):
             #                                  self.example)[1]
             self.overall_question = self.example
 
-    def get_actions(self, state: GSM8kState, ) -> list[GSM8kAction]:
+    def get_actions(self, state: GSM8kState, ) -> list[WebQAAction]:
 
         model_input = utils.action_selection_prompt(self.prompt, self.example["question"], state)
 
@@ -142,10 +142,11 @@ class GSM8kConfig(SearchConfig):
         actions = list(dict.fromkeys(actions))
         return actions
 
-    def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
+    def fast_reward(self, state: GSM8kState, action: WebQAAction) -> tuple[float, dict]:
         
         #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action[1])
+        keyword, details = action
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, details)
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
         print(model_input)
@@ -166,7 +167,7 @@ class GSM8kConfig(SearchConfig):
         return r_useful ** self.reward_alpha * r_conf ** (1 - self.reward_alpha), {'r_useful': r_useful,
                                                                                    'r_conf': r_conf}
 
-    def reward(self, state: GSM8kState, action: GSM8kAction,
+    def reward(self, state: GSM8kState, action: WebQAAction,
                r_useful: float = None,
                confidence: float = None) -> tuple[float, dict]:
         assert r_useful is not None, "useful_reward is required to calculate reward in this search config, consider passing it in fast_reward"
