@@ -146,6 +146,11 @@ class GSM8kConfig(SearchConfig):
         
         #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
         keyword, details = action
+
+        # TODO make sure if works as intended
+        if keyword == 'INVALID':
+            return 0, {'r_useful': 0}
+
         model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, details)
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
