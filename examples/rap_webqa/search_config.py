@@ -102,6 +102,8 @@ class GSM8kConfig(SearchConfig):
 
         keywords = selected_actions
         
+        #keywords = ["RETRIEVE"]
+
         print("keywords")
         print(keywords)
         

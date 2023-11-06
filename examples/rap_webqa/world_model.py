@@ -113,6 +113,9 @@ class Retrieval():
         path = self.example['path']
         index = self.example['index']
 
+        self.db = json.loads(Path(path).read_text())[index]
+        self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_posFacts']) | set(snippet['snippet_id'] for snippet in self.db['txt_negFacts'])
+
         metadata_func_with_extra = self.create_metadata_func(path, index)
         self.loader = JSONLoader(
             file_path=path,
@@ -151,7 +154,8 @@ class Retrieval():
         """
         Create a metadata function that adds additional metadata to the records.
         """
-        parent = json.loads(Path(path).read_text())[index]
+        # parent = json.loads(Path(path).read_text())[index]
+        parent = self.db
 
         def metadata_func(record: dict, metadata: dict):
             """
@@ -183,27 +187,47 @@ class Retrieval():
         """
         Format the retrieval results and create a RetrievalResult object.
         """
-        content_str = ','.join([f'{i}) ' + doc.page_content for i, doc in enumerate(docs)])
+        #content_str = ','.join([f'{i}) ' + doc.page_content for i, doc in enumerate(docs)])
+        retrieved_snippets = [doc.page_content for doc in docs]
         snippet_ids = [doc.metadata['snippet_id'] for doc in docs]
         flags = [doc.metadata['flag'] for doc in docs]
 
         result = RetrievalResult(
             state_type = "RETRIEVE",
             context = query, 
-            retrieved_snippets = content_str, 
+            retrieved_snippets = retrieved_snippets, # TODO content_str, 
             retrieved_sources = snippet_ids, 
             flags = flags
         )
         return result
 
-    def retrieve(self, query: str):
+    def get_unseen_snippet_ids(self, state):
+        """
+        Get the snippet IDs that have not been seen yet.
+        """
+        seen_snippet_ids = set()
+        for s in state:
+            if s.state_type == 'RETRIEVE':
+                seen_snippet_ids.update(s.retrieved_sources)
+        return self.set_all_snippet_ids - seen_snippet_ids
+
+    def retrieve(self, state, query: str):
         #query = query.replace("RETRIEVE: ", "", 1)
+        
+        #self.set_all_snippet_ids
 
         print("#" * 25 + "RETRIEVE Input" + "#" * 25)
         print(query)
         
-        docs = self.vectorstore.similarity_search(query)
-
+        unseen_snippet_ids = self.get_unseen_snippet_ids(state)
+        # docs = self.vectorstore.similarity_search(query)
+        unseen_snippet_ids_list = list(unseen_snippet_ids)
+        docs = self.vectorstore.similarity_search(
+            query, 
+            k = 4, # default 4
+            filter=dict(snippet_id=unseen_snippet_ids_list),
+            k_fetch = 20, # default 20
+            )
         result = self.format_retrieval_result(query, docs)
 
         print("#" * 25 + "RETRIEVE Output" + "#" * 25)
@@ -290,7 +314,7 @@ class Toolbox():
             return self.answer.answer(prompt, state)
         elif keyword == 'RETRIEVE':
             #return self.retrieval.retrieve(action)
-            return self.retrieval.retrieve(details)
+            return self.retrieval.retrieve(state, details)
         elif keyword == 'INVALID':
             return InvalidResult("INVALID", "INVALID")
         else:

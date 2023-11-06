@@ -10,12 +10,12 @@ from datetime import datetime
 from reasoners import LanguageModel, Reasoner, SearchAlgorithm
 from reasoners.algorithm import MCTS, MCTSNode, MCTSAggregation
 
-from world_model import GSM8kWorldModel, GSM8kState, GSM8kAction
+from world_model import GSM8kWorldModel, GSM8kState, WebQAAction
 from search_config import GSM8kConfig
 import utils
 
 
-def node_visualizer(x: MCTSNode[GSM8kState, GSM8kAction]):
+def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
     if not x.state:
         return {}
     if x.state[-1].state_type == "ANSWER":

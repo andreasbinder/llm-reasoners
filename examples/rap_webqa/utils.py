@@ -59,11 +59,12 @@ def action_selection_prompt(prompt, example, state):
             for idx, a in enumerate(prompt["actions"]):
                 # do not print action with no history
                 if any(s.state_type == a for s in state):
-                    f.write(a + ": " + "\n")
-                    for idx, s in enumerate(state):
-                        if a == s.state_type:
-                            #g.write(s[0] + " "+ s[1] + "\n")
-                            f.write(get_history(s, a) + "\n")
+                    # f.write(a + ": " + "\n")
+                    # for idx, s in enumerate(state):
+                    #     if a == s.state_type:
+                    #         #g.write(s[0] + " "+ s[1] + "\n")
+                    #         f.write(get_history(s, a) + "\n")
+                    f.write(get_history(state, a)) # TODO 
 
         # output format
         f.write(prompt["action_selection"]["output_format"] + "\n") 
@@ -86,10 +87,13 @@ def action_prompt(prompt, example, state, action):
                 # do not print action with no history
                 if any(s.state_type == a for s in state):
                     #g.write(a + ": " + "\n")
-                    for idx, s in enumerate(state):
-                        if a == s.state_type:
-                            #g.write(s[0] + " "+ s[1] + "\n")
-                            g.write(get_history(s, a) + "\n")
+                    # TODO long term solution should be cleaner
+                    # for idx, s in enumerate(state):
+                    #     if a == s.state_type:
+                    #         #g.write(s[0] + " "+ s[1] + "\n")
+                    #         g.write(get_history(s, a) + "\n")
+                    # TODO right now anyway only retrieve has history
+                    g.write(get_history(state, a)) # TODO 
 
         # # write examples
         # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
@@ -133,10 +137,11 @@ def evaluation_prompt(action_prompt, prompt, example, state, action):
                 # do not print action with no history
                 if any(s.state_type == a for s in state):
                     #g.write(a + ": " + "\n")
-                    for idx, s in enumerate(state):
-                        if a == s.state_type:
-                            #g.write(s[0] + " "+ s[1] + "\n")
-                            g.write(get_history(s, a) + "\n")
+                    # for idx, s in enumerate(state):
+                    #     if a == s.state_type:
+                    #         #g.write(s[0] + " "+ s[1] + "\n")
+                    #         g.write(get_history(s, a) + "\n")
+                    g.write(get_history(state, a)) # TODO 
 
         # # write examples
         # g.write(prompt["actions"][action]["examples"]["prefix"] + "\n") 
@@ -169,10 +174,11 @@ def answer_prompt(prompt, example, state, action):
                 # do not print action with no history
                 if any(s.state_type == a for s in state):
                     #g.write(a + ": " + "\n")
-                    for idx, s in enumerate(state):
-                        if a == s.state_type:
-                            #g.write(s[0] + " "+ s[1] + "\n")
-                            g.write(get_history(s, a) + "\n")
+                    # for idx, s in enumerate(state):
+                    #     if a == s.state_type:
+                    #         #g.write(s[0] + " "+ s[1] + "\n")
+                    #         g.write(get_history(s, a) + "\n")
+                    g.write(get_history(state, a)) # TODO 
 
         # output format
         g.write(prompt["actions"][action]["output_format"] + "\n") 
@@ -181,9 +187,16 @@ def answer_prompt(prompt, example, state, action):
         model_input = g.getvalue()
     return model_input      
 
-def get_history(state, action):
-    if action == "RETRIEVE":
-        return state.retrieved_snippets
+def get_history(state_list, action):
+    # if action == "RETRIEVE":
+    #     return state.retrieved_snippets
+    snippets = [snippet for state in state_list for snippet in state.retrieved_snippets]
+    out = ""
+    for idx, snippet in enumerate(snippets):
+        out += f"{idx}) {snippet}" + "\n"
+    return out
+    
+
 
 def retrieve_answer(output: Union[list, str]) -> Optional[str]:
     '''
