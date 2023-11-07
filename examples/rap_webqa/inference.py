@@ -28,7 +28,8 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
         return {
             "context": x.state[-1].context,
             "snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
-            "flags": x.state[-1].flags
+            "flags": x.state[-1].flags, 
+            "relevance_scores": [f'{relevance_score:.3f}'  for relevance_score in x.state[-1].relevance_scores],
             } 
     elif x.state[-1].state_type == "INVALID":
         return {

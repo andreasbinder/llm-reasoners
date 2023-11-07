@@ -36,7 +36,23 @@
         
         "RETRIEVE": {
             "hyparams": {
-                "use_api": false
+                "use_api": false,
+                "use_cache": true,
+                "vector_store_kwargs": {
+                    "scoring_mode": "euclidean",
+                    "normalize_L2": false
+                },
+                "search_kwargs": {
+                    "k": 4,
+                    "k_fetch": 20
+                },
+                "model_name": "sentence-transformers/all-mpnet-base-v2",
+                "model_kwargs": {
+                    "device": "cuda"
+                },
+                "encode_kwargs": {
+                    "normalize_embeddings": false
+                }
 
             },
             "description": "Create a textual query to answer an overall question.",

@@ -1,5 +1,5 @@
 import io
-from typing import NamedTuple, TypedDict, Union, Tuple
+from typing import NamedTuple, TypedDict, Union, Tuple, List
 from collections import defaultdict
 from reasoners import WorldModel, LanguageModel
 import utils
@@ -32,9 +32,10 @@ class DecomposeResult(NamedTuple):
 class RetrievalResult(NamedTuple):
     state_type: str
     context: str
-    retrieved_snippets: str
-    retrieved_sources: str
-    flags: str
+    retrieved_snippets: List[str]
+    retrieved_sources: List[str]
+    flags: List[str]
+    relevance_scores: List[float]
 # RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
 
 class AnswerResult(NamedTuple):
@@ -73,6 +74,67 @@ import json
 
 # Make sure to define or import RetrievalResult somewhere in your code.
 
+class WebQAVectorStore(FAISS):
+    SCORING_MODE = None
+    # def __init__(self, documents, embeddings, scoring_mode, *args, **kwargs):
+    #     self.scoring_mode = scoring_mode 
+    #     super().__init__(documents, embeddings, *args, **kwargs)
+
+    @classmethod
+    def from_documents(cls, documents, embeddings, scoring_mode, *args, **kwargs):
+        # Perform any preprocessing required for the documents or embeddings
+        # ...
+
+        # Assuming 'SuperClass' is the name of your parent class and you want to
+        # call 'from_documents' of the superclass, you can do it like this:
+        instance = super(cls, cls).from_documents(documents, embeddings, *args, **kwargs)
+
+        # Now that you have the instance, you can set additional properties or do more with it
+        instance.scoring_mode = scoring_mode
+        # Do anything else with the instance as needed
+        
+        return instance
+
+
+    # @classmethod 
+    # def from_documents(cls, documents, embeddings, scoring_mode, *args, **kwargs):
+    #     # Perform any preprocessing required for the documents or embeddings
+    #     # For example, we could normalize embeddings if specified to do so:
+    #     # if kwargs.get('normalize_L2', False):
+    #     #     embeddings = cls._normalize_embeddings(embeddings)
+        
+    #     # Any additional preprocessing steps can be added here
+    #     global SCORING_MODE 
+    #     SCORING_MODE = scoring_mode
+    #     # Then call the constructor with the preprocessed data and other arguments
+    #     return cls(documents, embeddings, *args, **kwargs)
+
+    def _cosine_range_adjusted(self, score):
+            # transformed_similarity = (cosine_similarity + 1) / 2
+            return (self._cosine_relevance_score_fn(score) + 1) / 2
+
+    def similarity_search_with_relevance_scores(self, query, k=4, filter=None, k_fetch=20):
+        docs_and_scores = self.similarity_search_with_score(
+            query, k, filter=filter, fetch_k=k_fetch, 
+        )
+            
+        # self.normalized_scores = [self._cosine_range_adjusted(score) for _, score in docs_and_scores]
+        # return [(doc, score) for doc, score in docs_and_scores]
+    
+        if self.scoring_mode == 'cosine':
+            normalized_scores = [self._cosine_range_adjusted(score) for _, score in docs_and_scores]
+        elif self.scoring_mode == 'euclidean':
+            normalized_scores = [self._euclidean_relevance_score_fn(score) for _, score in docs_and_scores]
+        else:
+            raise ValueError(f"Scoring mode {self.scoring_mode} not supported.")
+
+        docs, relevance_scores = zip(*docs_and_scores)
+        # Return docs with normalized scores
+        return [(doc, score) for doc, score in zip(docs, normalized_scores)]
+
+
+
+
 class Retrieval():
     def __init__(self, example, hyparams):
         """
@@ -81,7 +143,26 @@ class Retrieval():
         :param use_api: A flag to indicate whether to use the HuggingFace API or local embeddings.
         """
         self.example = example
-        self.use_api = hyparams['use_api'] 
+        self.use_api = hyparams.get('use_api', False)
+        self.use_cache = hyparams.get('use_cache', True)
+        self.vector_store_kwargs = hyparams.get('vector_store_kwargs', {
+            "normalize_L2": False,
+            "scoring_mode": "euclidean"
+        })
+        self.search_kwargs = hyparams.get('search_kwargs', {
+            "k": 4,
+            "k_fetch": 20
+        })
+        # Note: that sentence-transformers/all-mpnet-base-v2 considered best allarounder mode
+        # Probably multi-qa-distilbert-cos-v1 is better for cosine similarity -> every model was optimized differently
+        self.model_name = hyparams.get('model_name', "sentence-transformers/all-mpnet-base-v2")
+        self.model_kwargs = hyparams.get('model_kwargs', {
+            "device": "cuda"
+        })
+        self.encode_kwargs = hyparams.get('encode_kwargs', {
+            "normalize_embeddings": False
+        })
+
         self.documents = None  # Initialize to None or a sensible default
         self.embeddings = None
         self.vectorstore = None
@@ -130,25 +211,36 @@ class Retrieval():
         """
         Setup the embeddings for the document retrieval.
         """
-        model_name = "sentence-transformers/all-mpnet-base-v2"
-        model_kwargs = {"device": "cuda"}  # Assuming you want to use CUDA for local embedding calculation
 
         if self.use_api:
             self.embeddings = HuggingFaceInferenceAPIEmbeddings(
                 api_key=self.huggingface_token,  # Use the stored token
-                model_name=model_name
+                model_name=self.model_name
             )
         else:
             self.embeddings = HuggingFaceEmbeddings(
-                model_name=model_name,
-                model_kwargs=model_kwargs
+                model_name=self.model_name,
+                model_kwargs=self.model_kwargs,
+                encode_kwargs=self.encode_kwargs
             )
 
     def setup_vectorstore(self):
         """
         Setup the vector store for storing and retrieving document embeddings.
         """
-        self.vectorstore = FAISS.from_documents(self.documents, self.embeddings)
+        from langchain.vectorstores.utils import DistanceStrategy
+        # self.vectorstore = FAISS.from_documents(
+        #     self.documents, 
+        #     self.embeddings,
+        #     #distance_strategy = DistanceStrategy.COSINE
+        #     )
+        self.vectorstore = WebQAVectorStore.from_documents(
+            self.documents, 
+            self.embeddings,
+            scoring_mode=self.vector_store_kwargs['scoring_mode'],  # Add the scoring_mode parameter
+            normalize_L2=self.vector_store_kwargs['normalize_L2'] ,
+            distance_strategy = DistanceStrategy.COSINE if self.vector_store_kwargs['scoring_mode'] == 'cosine' else DistanceStrategy.EUCLIDEAN_DISTANCE 
+            )
 
     def create_metadata_func(self, path, index):
         """
@@ -183,11 +275,12 @@ class Retrieval():
 
         return metadata_func
 
-    def format_retrieval_result(self, query, docs):
+    def format_retrieval_result(self, query, docs_with_scores):
         """
         Format the retrieval results and create a RetrievalResult object.
         """
         #content_str = ','.join([f'{i}) ' + doc.page_content for i, doc in enumerate(docs)])
+        docs, relevance_scores = zip(*docs_with_scores)
         retrieved_snippets = [doc.page_content for doc in docs]
         snippet_ids = [doc.metadata['snippet_id'] for doc in docs]
         flags = [doc.metadata['flag'] for doc in docs]
@@ -197,7 +290,8 @@ class Retrieval():
             context = query, 
             retrieved_snippets = retrieved_snippets, # TODO content_str, 
             retrieved_sources = snippet_ids, 
-            flags = flags
+            flags = flags,
+            relevance_scores = relevance_scores
         )
         return result
 
@@ -211,24 +305,29 @@ class Retrieval():
                 seen_snippet_ids.update(s.retrieved_sources)
         return self.set_all_snippet_ids - seen_snippet_ids
 
-    def retrieve(self, state, query: str):
-        #query = query.replace("RETRIEVE: ", "", 1)
+    def cache_function(self, state):
+
+        if not self.use_cache:
+            return None
         
-        #self.set_all_snippet_ids
+        unseen_snippet_ids = self.get_unseen_snippet_ids(state)
+        unseen_snippet_ids_list = list(unseen_snippet_ids)
+        return dict(snippet_id=unseen_snippet_ids_list)
+
+
+    def retrieve(self, state, query: str):
 
         print("#" * 25 + "RETRIEVE Input" + "#" * 25)
         print(query)
         
-        unseen_snippet_ids = self.get_unseen_snippet_ids(state)
-        # docs = self.vectorstore.similarity_search(query)
-        unseen_snippet_ids_list = list(unseen_snippet_ids)
-        docs = self.vectorstore.similarity_search(
+        docs_with_scores = self.vectorstore.similarity_search_with_relevance_scores(
             query, 
-            k = 4, # default 4
-            filter=dict(snippet_id=unseen_snippet_ids_list),
-            k_fetch = 20, # default 20
+            k = self.search_kwargs.get('k'), # default 4
+            filter=self.cache_function(state),
+            k_fetch = self.search_kwargs.get('k_fetch'), # default 20
             )
-        result = self.format_retrieval_result(query, docs)
+        
+        result = self.format_retrieval_result(query, docs_with_scores)
 
         print("#" * 25 + "RETRIEVE Output" + "#" * 25)
         print(result.retrieved_snippets)  
