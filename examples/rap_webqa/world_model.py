@@ -196,14 +196,16 @@ class Retrieval():
         guid = self.example['Guid']
 
         self.db = json.loads(Path(path).read_text())[guid]
-        self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_posFacts']) | set(snippet['snippet_id'] for snippet in self.db['txt_negFacts'])
+        
 
         metadata_func_with_extra = self.create_metadata_func(path, index)
 
         if self.example.get('split', None) == "test": 
             jq_schema=f'.{guid}.txt_Facts[]'
+            self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_Facts'])
         else:
             jq_schema=f'.{guid}.txt_posFacts[], .{guid}.txt_negFacts[]'
+            self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_posFacts']) | set(snippet['snippet_id'] for snippet in self.db['txt_negFacts'])
 
         self.loader = JSONLoader(
             file_path=path,
