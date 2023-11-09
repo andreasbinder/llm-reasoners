@@ -26,6 +26,7 @@ def load_webqa_dataset(path_to_webqa, split, resume):
         new_value['Q'] = value['Q']
         new_value['Guid'] = value['Guid']
         new_value['A'] = value['A']
+        new_value['split'] = value['split']
         new_value['Qcate'] = value.get('Qcate', None)
         # print(key, value['Q'])
         # value.setdefault('Qcate', None)
