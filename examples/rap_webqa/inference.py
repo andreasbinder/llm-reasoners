@@ -60,6 +60,7 @@ def rap_gsm8k(base_model: LanguageModel,
               output_trace_in_each_iter: bool = True,
               aggregate: bool = True,
               path_to_webqa: str = None, # TODO
+              split: str = "test", # TODO
               **search_algo_params):
     if not disable_log:
         time_prefix = datetime.now().strftime("%m%d%Y-%H%M%S")
@@ -90,8 +91,8 @@ def rap_gsm8k(base_model: LanguageModel,
 
     
  
-    HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
-    print("HF_memory_footprint: ", HF_memory_footprint)
+    #HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
+    #print("HF_memory_footprint: ", HF_memory_footprint)
     
     def load_webqa_dataset(path_to_webqa, resume):
         from pathlib import Path
@@ -243,6 +244,9 @@ if __name__ == '__main__':
         elif base_lm == "openai":
             from reasoners.lm import GPTCompletionModel
             base_model = GPTCompletionModel(model=exllama_model_dir, temperature=0.7, max_tokens=1000)
+        elif base_lm == "fake-llm":
+            from reasoners.lm import FakeLLM
+            base_model = FakeLLM()
         else:
             assert False, f'cannot resolve {base_lm=}'
 

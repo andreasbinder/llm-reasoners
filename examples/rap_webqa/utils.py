@@ -3,32 +3,35 @@ from typing import Optional, Union
 
 import io
 
-def create_vector_store(path):
-    from langchain.document_loaders import JSONLoader
+def load_webqa_dataset(path_to_webqa, split, resume):
+    import json
+    from pathlib import Path
 
-    loader = JSONLoader(
-        file_path=path,
-        # jq_schema='.[0].txt_posFacts[].fact, .[0].txt_negFacts[].fact', #.txt_posFacts[].fact +
-        jq_schema='.[0].txt_posFacts[], .[0].txt_negFacts[]',
-        content_key="fact",
-        text_content=True,
-    )
-    documents = loader.load()
-    # TODO add label if correct source
-    # loop and manually add label
+    with open(Path(path_to_webqa), 'r') as file:
+        data = json.load(file)
+        
+    if isinstance(resume, str):
+        start_str, end_str = resume.strip('[]').split(',')
+        start, end = int(start_str), int(end_str)
+        selected_indices = list(range(start, end+1))
+    if isinstance(resume, int):
+        selected_indices = [resume]
+    if isinstance(resume, list):
+        selected_indices = list(range(resume[0], resume[1]+1))
+    
+    selected_data = [
+        {
+            "index": idx, 
+            "question": data[idx]["Q"], 
+            "Guid": data[idx]["Guid"], 
+            "ground-truth": data[idx]["A"],
+            "Qcate": data[idx]["Qcate"],
+            "path": path_to_webqa
+        } 
+        for idx in selected_indices if idx < len(data)
+    ]
+    return selected_data
 
-    from langchain.embeddings import HuggingFaceEmbeddings
-    from langchain.vectorstores import FAISS
-
-    model_name = "sentence-transformers/all-mpnet-base-v2"
-    model_kwargs = {"device": "cuda"}
-
-    embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
-
-    # storing embeddings in the vector store
-    vectorstore = FAISS.from_documents(documents, embeddings)
-
-    return vectorstore
 
 def find_first_appearance(text, keys):
     keywords = list(keys)

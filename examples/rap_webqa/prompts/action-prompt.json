@@ -26,14 +26,12 @@
         "history": "This information is available from each taken action:",
         "output_format": "The selected action is: "
     },
-    "actions": 
-    {
+    "actions": {
         "ANSWER": {
             "description": "Provide a direct answer to the question without forwarding a task.",
             "history": "This context you can use to answer the question:",
             "output_format": "The final answer is:"
         },
-        
         "RETRIEVE": {
             "hyparams": {
                 "use_api": false,
