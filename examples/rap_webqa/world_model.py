@@ -192,15 +192,22 @@ class Retrieval():
         Load documents from a JSON file based on the given jq schema.
         """
         path = self.example['path']
-        index = self.example['index']
+        index = None
+        guid = self.example['Guid']
 
-        self.db = json.loads(Path(path).read_text())[index]
+        self.db = json.loads(Path(path).read_text())[guid]
         self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_posFacts']) | set(snippet['snippet_id'] for snippet in self.db['txt_negFacts'])
 
         metadata_func_with_extra = self.create_metadata_func(path, index)
+
+        if self.example.get('split', None) == "test": 
+            jq_schema=f'.{guid}.txt_Facts[]'
+        else:
+            jq_schema=f'.{guid}.txt_posFacts[], .{guid}.txt_negFacts[]'
+
         self.loader = JSONLoader(
             file_path=path,
-            jq_schema=f'.[{index}].txt_posFacts[], .[{index}].txt_negFacts[]',
+            jq_schema=jq_schema,
             content_key="fact",
             text_content=True,
             metadata_func=metadata_func_with_extra
@@ -257,14 +264,14 @@ class Retrieval():
             flag = None
 
             # Search in positive facts for a matching snippet_id
-            for pos_record in parent['txt_posFacts']:
+            for pos_record in parent.get('txt_posFacts', []):
                 if pos_record['snippet_id'] == snippet_id:
                     flag = 'pos'
                     break
 
             # If not found in positive facts, search in negative facts
             if flag is None:
-                for neg_record in parent['txt_negFacts']:
+                for neg_record in parent.get('txt_negFacts', []):
                     if neg_record['snippet_id'] == snippet_id:
                         flag = 'neg'
                         break
@@ -357,7 +364,7 @@ class Answer():
         """
         self.base_model = base_model
         self.temperature = temperature
-        self.question = example['question']
+        self.question = example['Q']
 
     def answer(self, prompt, state: str) -> str:
         """

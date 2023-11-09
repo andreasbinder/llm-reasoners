@@ -57,7 +57,9 @@ class GSM8kConfig(SearchConfig):
 
     def get_actions(self, state: GSM8kState, ) -> list[WebQAAction]:
 
-        model_input = utils.action_selection_prompt(self.prompt, self.example["question"], state)
+        question = self.example["Q"]
+
+        model_input = utils.action_selection_prompt(self.prompt, question, state)
 
         #model_input = action_selection()
         print("#" * 25 + "Action Selection Input" + "#" * 25)
@@ -107,7 +109,7 @@ class GSM8kConfig(SearchConfig):
         print("keywords")
         print(keywords)
         
-        prompts_per_keyword = [utils.action_prompt(self.prompt, self.example["question"], state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
+        prompts_per_keyword = [utils.action_prompt(self.prompt, question, state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
         
         print("#" * 25 + "Action Input" + "#" * 25)
         print(prompts_per_keyword)
@@ -115,8 +117,8 @@ class GSM8kConfig(SearchConfig):
         actions = []
         for keyword, prompt in zip(keywords, prompts_per_keyword):
             if keyword == 'ANSWER':
-                #actions += ['ANSWER' + ': ' + self.example["question"]]
-                actions += [('ANSWER', self.example["question"])]
+                #actions += ['ANSWER' + ': ' + question]
+                actions += [('ANSWER', question)]
             
             elif keyword == 'INVALID':
                 #actions += ['INVALID']
@@ -137,8 +139,8 @@ class GSM8kConfig(SearchConfig):
         # actions = [action.strip() for action in actions]
         if at_depth_limit:
 
-            # actions = ['ANSWER' + ': ' + self.example["question"] for _ in actions]
-            actions = [('ANSWER', self.example["question"]) for _ in actions]
+            # actions = ['ANSWER' + ': ' + question for _ in actions]
+            actions = [('ANSWER', question) for _ in actions]
         # set does not guarantee order, but dict does guarantee
         # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes
         actions = list(dict.fromkeys(actions))
@@ -146,14 +148,15 @@ class GSM8kConfig(SearchConfig):
 
     def fast_reward(self, state: GSM8kState, action: WebQAAction) -> tuple[float, dict]:
         
-        #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, action)
+        #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, action)
+        question = self.example["Q"]
         keyword, details = action
 
         # TODO make sure if works as intended
         if keyword == 'INVALID':
             return 0, {'r_useful': 0}
 
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, self.example["question"] , state, details)
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, details)
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
         print(model_input)

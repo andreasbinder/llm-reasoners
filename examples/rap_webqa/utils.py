@@ -6,30 +6,36 @@ import io
 def load_webqa_dataset(path_to_webqa, split, resume):
     import json
     from pathlib import Path
+    from tqdm import tqdm
 
     with open(Path(path_to_webqa), 'r') as file:
         data = json.load(file)
-        
-    if isinstance(resume, str):
-        start_str, end_str = resume.strip('[]').split(',')
-        start, end = int(start_str), int(end_str)
-        selected_indices = list(range(start, end+1))
-    if isinstance(resume, int):
-        selected_indices = [resume]
+
+    from itertools import islice
+
     if isinstance(resume, list):
-        selected_indices = list(range(resume[0], resume[1]+1))
-    
-    selected_data = [
-        {
-            "index": idx, 
-            "question": data[idx]["Q"], 
-            "Guid": data[idx]["Guid"], 
-            "ground-truth": data[idx]["A"],
-            "Qcate": data[idx]["Qcate"],
-            "path": path_to_webqa
-        } 
-        for idx in selected_indices if idx < len(data)
-    ]
+        iterator = islice(data.items(), resume[0], resume[1])
+    elif isinstance(resume, str):
+        iterator = {resume : data[resume]}.items()
+    elif isinstance(resume, int):
+        iterator = islice(data.items(), resume, resume + 1)
+
+    selected_data = {}
+    for key, value in tqdm(iterator, desc="Loading data"):
+        new_value = {}
+        new_value['Q'] = value['Q']
+        new_value['Guid'] = value['Guid']
+        new_value['A'] = value['A']
+        new_value['Qcate'] = value.get('Qcate', None)
+        # print(key, value['Q'])
+        # value.setdefault('Qcate', None)
+        # new ones
+        new_value.setdefault('Keywords_A', 'TBD')
+        new_value.setdefault('answer', 'TBD')
+        new_value.setdefault('sources', [])
+        new_value.setdefault('path', path_to_webqa)
+        selected_data[key] = new_value
+
     return selected_data
 
 

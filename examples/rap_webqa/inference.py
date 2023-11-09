@@ -1,5 +1,5 @@
 import pickle
-from typing import Type, Callable, Optional, Literal
+from typing import Type, Callable, Optional, Literal, List
 
 import numpy as np
 from datasets import load_dataset
@@ -52,8 +52,8 @@ def rap_gsm8k(base_model: LanguageModel,
               early_stop_threshold: float = 0.5,
               reward_alpha: float = 0.5,
               reward_confidence_default: float = 0.8,
-              cum_reward: Callable[[list[float]], float] = np.mean,
-              calc_q: Callable[[list[float]], float] = max,
+              cum_reward: Callable[[List[float]], float] = np.mean,
+              calc_q: Callable[[List[float]], float] = max,
               log_dir: Optional[str] = None,
               disable_log: bool = False,
               disable_tqdm: bool = False,
@@ -119,40 +119,47 @@ def rap_gsm8k(base_model: LanguageModel,
         ]
         return selected_data
 
-    dataset = load_webqa_dataset(path_to_webqa, resume)
-
+    dataset = utils.load_webqa_dataset(path_to_webqa, split, resume)
+ 
     webqa_results = {}
 
     if len(dataset) < 3:
         print("dataset: ", dataset)
 
-    for i, example in enumerate(tqdm(dataset, total=len(dataset),
-                                     desc='WebQA', disable=disable_tqdm)):
+    for key in tqdm(dataset, total=len(dataset),
+                                     desc='WebQA', disable=disable_tqdm):
+        
+        example = dataset[key]
         print("#" * 25 + "Case Number: "+ str(example["Guid"]) + "#" * 25)
         
         algo_output = reasoner(example)
 
-        prediction = algo_output.terminal_state[-1].main_answer
-        print(f'Prediction: {prediction}')
-        print(f'Answer: {example["ground-truth"]}')
-        log_str = f'Guid: {example["Guid"]} Prediction: {prediction} Ground-truth: {example["ground-truth"]}'
-        webqa_results.update({
-            example["Guid"]: {
-                # for manual inspection
-                "Guid": example["Guid"],   
-                "Qcate": example["Qcate"],
-                "Q": example["question"], 
-                "A": example["ground-truth"],
-                "Keywords_A" : "TBD",
-                # "Output_conf" : [1], # not really needed
-                # needed for online evaluation
-                "answer": prediction[0], # TODO supposed to not be list
-                "sources": [], # TODO
-            }
-        })
+        answer = algo_output.terminal_state[-1].main_answer
+        A = example["A"]
+        guid = example["Guid"]
+        print(f'Prediction: {answer}')
+        print(f'Answer: {A}')
+        log_str = f'Guid: {example["Guid"]} Prediction: {answer} Ground-truth: {A}'
+
+        dataset[key]['answer'] = answer[0]
+        dataset[key].pop('path', None)
+        # webqa_results.update({
+        #     example["Guid"]: {
+        #         # for manual inspection
+        #         "Guid": example["Guid"],   
+        #         "Qcate": example["Qcate"],
+        #         "Q": example["question"], 
+        #         "A": A,
+        #         "Keywords_A" : "TBD",
+        #         # "Output_conf" : [1], # not really needed
+        #         # needed for online evaluation
+        #         "answer": answer[0], # TODO supposed to not be list
+        #         "sources": [], # TODO
+        #     }
+        # })
         # save after every example in case of intermediate failures
         with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
-            json.dump(webqa_results, json_file, indent=4)
+            json.dump(dataset, json_file, indent=4)
 
         tqdm.write(log_str)
         if not disable_log:
@@ -169,7 +176,7 @@ def rap_gsm8k(base_model: LanguageModel,
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
     with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
-        json.dump(webqa_results, json_file, indent=4)
+        json.dump(dataset, json_file, indent=4)
 
 
 if __name__ == '__main__':
