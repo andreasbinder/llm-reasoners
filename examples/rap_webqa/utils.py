@@ -3,6 +3,40 @@ from typing import Optional, Union
 
 import io
 
+# TODO suggested improvements
+# Python
+# import json
+# from pathlib import Path
+# from tqdm import tqdm
+# from itertools import islice
+
+# def load_webqa_dataset(path_to_webqa, split, resume):
+#     with open(Path(path_to_webqa), 'r') as file:
+#         data = json.load(file)
+
+#     if isinstance(resume, list):
+#         iterator = islice(data.items(), resume[0], resume[1])
+#     elif isinstance(resume, str):
+#         iterator = {resume : data[resume]}.items()
+#     elif isinstance(resume, int):
+#         iterator = islice(data.items(), resume, resume + 1)
+
+#     selected_data = {
+#         key: {
+#             'Q': value['Q'],
+#             'Guid': value['Guid'],
+#             'A': value['A'],
+#             'split': value['split'],
+#             'Qcate': value.get('Qcate', None),
+#             'Keywords_A': 'TBD',
+#             'answer': 'TBD',
+#             'sources': [],
+#             'path': path_to_webqa
+#         } for key, value in tqdm(iterator, desc="Loading data")
+#     }
+
+#     return selected_data
+
 def load_webqa_dataset(path_to_webqa, split, resume):
     import json
     from pathlib import Path
