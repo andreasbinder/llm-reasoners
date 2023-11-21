@@ -74,6 +74,51 @@ import json
 
 # Make sure to define or import RetrievalResult somewhere in your code.
 
+import json
+from PIL import Image
+from sentence_transformers import SentenceTransformer, util
+import base64
+from io import BytesIO
+
+class MultimodalRetrievalSBERT:
+    def __init__(self, json_path, lineidx_path, model_name='clip-ViT-B-32'):
+        self.model = SentenceTransformer(model_name)
+        self.data = self.load_json(json_path)
+        self.lineidx = self.load_lineidx(lineidx_path)
+
+    def load_json(self, path):
+        with open(path, 'r') as file:
+            data = json.load(file)
+        return data
+
+    def load_lineidx(self, path):
+        with open(path, 'r') as file:
+            lineidx = [int(line.strip()) for line in file.readlines()]
+        return lineidx
+
+    def image_id_to_image(self, image_id):
+        with open("/nfs/data2/zhangya/webqa/imgs.tsv", "r") as fp:
+            fp.seek(self.lineidx[int(image_id) % 10000000])
+            imgid, img_base64 = fp.readline().strip().split('\t')
+        image = Image.open(BytesIO(base64.b64decode(img_base64)))
+        return image
+
+    def encode_images(self, image_ids):
+        images = [self.image_id_to_image(image_id) for image_id in image_ids]
+        img_embeddings = self.model.encode([image for image in images if image is not None], convert_to_tensor=True)
+        return img_embeddings
+
+    def encode_texts(self, texts):
+        text_embeddings = self.model.encode(texts, convert_to_tensor=True)
+        return text_embeddings
+
+    def semantic_search(self, query_embedding, corpus_embeddings):
+        cos_scores = util.cos_sim(query_embedding, corpus_embeddings)
+        return cos_scores
+
+    # Additional methods as needed
+
+
 class WebQAVectorStore(FAISS):
     SCORING_MODE = None
     # def __init__(self, documents, embeddings, scoring_mode, *args, **kwargs):
@@ -133,9 +178,7 @@ class WebQAVectorStore(FAISS):
         return [(doc, score) for doc, score in zip(docs, normalized_scores)]
 
 
-
-
-class Retrieval():
+class MMRetrieval():
     def __init__(self, example, hyparams):
         """
         Initialize the Retrieval class with given example configuration.
@@ -195,6 +238,7 @@ class Retrieval():
         index = None
         guid = self.example['Guid']
 
+        # TODO less efficient than open
         self.db = json.loads(Path(path).read_text())[guid]
         
 
@@ -343,6 +387,218 @@ class Retrieval():
 
         return result
 
+
+class Retrieval():
+    def __init__(self, example, hyparams):
+        """
+        Initialize the Retrieval class with given example configuration.
+        :param example: Example configuration for retrieval.
+        :param use_api: A flag to indicate whether to use the HuggingFace API or local embeddings.
+        """
+        self.example = example
+        self.use_api = hyparams.get('use_api', False)
+        self.use_cache = hyparams.get('use_cache', True)
+        self.vector_store_kwargs = hyparams.get('vector_store_kwargs', {
+            "normalize_L2": False,
+            "scoring_mode": "euclidean"
+        })
+        self.search_kwargs = hyparams.get('search_kwargs', {
+            "k": 4,
+            "k_fetch": 20
+        })
+        # Note: that sentence-transformers/all-mpnet-base-v2 considered best allarounder mode
+        # Probably multi-qa-distilbert-cos-v1 is better for cosine similarity -> every model was optimized differently
+        self.model_name = hyparams.get('model_name', "sentence-transformers/all-mpnet-base-v2")
+        self.model_kwargs = hyparams.get('model_kwargs', {
+            "device": "cuda"
+        })
+        self.encode_kwargs = hyparams.get('encode_kwargs', {
+            "normalize_embeddings": False
+        })
+
+        self.documents = None  # Initialize to None or a sensible default
+        self.embeddings = None
+        self.vectorstore = None
+
+        self.huggingface_token = self.setup_environment()  # Set up tokens or other configurations
+        self.load_documents()     # This will update self.documents
+        self.setup_embeddings()   # Set up the embedding mechanism
+        self.setup_vectorstore()  # Create the vector store based on loaded documents
+
+
+
+    def setup_environment(self):
+        """
+        Setup environment variables and other configurations.
+        """
+        if self.use_api:
+            huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
+            if huggingface_token is None:
+                raise ValueError(
+                    "HUGGINGFACE_TOKEN not set. Please set it in your environment variables."
+                )
+            return huggingface_token
+        return None
+
+    def load_documents(self):
+        """
+        Load documents from a JSON file based on the given jq schema.
+        """
+        path = self.example['path']
+        index = None
+        guid = self.example['Guid']
+
+        # TODO less efficient than open
+        self.db = json.loads(Path(path).read_text())[guid]
+        
+
+        metadata_func_with_extra = self.create_metadata_func(path, index)
+
+        if self.example.get('split', None) == "test": 
+            jq_schema=f'.{guid}.txt_Facts[]'
+            self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_Facts'])
+        else:
+            jq_schema=f'.{guid}.txt_posFacts[], .{guid}.txt_negFacts[]'
+            self.set_all_snippet_ids = set(snippet['snippet_id'] for snippet in self.db['txt_posFacts']) | set(snippet['snippet_id'] for snippet in self.db['txt_negFacts'])
+
+        self.loader = JSONLoader(
+            file_path=path,
+            jq_schema=jq_schema,
+            content_key="fact",
+            text_content=True,
+            metadata_func=metadata_func_with_extra
+        )
+        self.documents = self.loader.load()
+
+    def setup_embeddings(self):
+        """
+        Setup the embeddings for the document retrieval.
+        """
+
+        if self.use_api:
+            self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+                api_key=self.huggingface_token,  # Use the stored token
+                model_name=self.model_name
+            )
+        else:
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=self.model_name,
+                model_kwargs=self.model_kwargs,
+                encode_kwargs=self.encode_kwargs
+            )
+
+    def setup_vectorstore(self):
+        """
+        Setup the vector store for storing and retrieving document embeddings.
+        """
+        from langchain.vectorstores.utils import DistanceStrategy
+        # self.vectorstore = FAISS.from_documents(
+        #     self.documents, 
+        #     self.embeddings,
+        #     #distance_strategy = DistanceStrategy.COSINE
+        #     )
+        self.vectorstore = WebQAVectorStore.from_documents(
+            self.documents, 
+            self.embeddings,
+            scoring_mode=self.vector_store_kwargs['scoring_mode'],  # Add the scoring_mode parameter
+            normalize_L2=self.vector_store_kwargs['normalize_L2'] ,
+            distance_strategy = DistanceStrategy.COSINE if self.vector_store_kwargs['scoring_mode'] == 'cosine' else DistanceStrategy.EUCLIDEAN_DISTANCE 
+            )
+
+    def create_metadata_func(self, path, index):
+        """
+        Create a metadata function that adds additional metadata to the records.
+        """
+        # parent = json.loads(Path(path).read_text())[index]
+        parent = self.db
+
+        def metadata_func(record: dict, metadata: dict):
+            """
+            Add 'pos' or 'neg' flag to the metadata based on the snippet category.
+            """
+            snippet_id = record.get("snippet_id")
+            flag = None
+
+            # Search in positive facts for a matching snippet_id
+            for pos_record in parent.get('txt_posFacts', []):
+                if pos_record['snippet_id'] == snippet_id:
+                    flag = 'pos'
+                    break
+
+            # If not found in positive facts, search in negative facts
+            if flag is None:
+                for neg_record in parent.get('txt_negFacts', []):
+                    if neg_record['snippet_id'] == snippet_id:
+                        flag = 'neg'
+                        break
+            
+            metadata["flag"] = flag
+            metadata["snippet_id"] = snippet_id
+            return metadata
+
+        return metadata_func
+
+    def format_retrieval_result(self, query, docs_with_scores):
+        """
+        Format the retrieval results and create a RetrievalResult object.
+        """
+        #content_str = ','.join([f'{i}) ' + doc.page_content for i, doc in enumerate(docs)])
+        docs, relevance_scores = zip(*docs_with_scores)
+        retrieved_snippets = [doc.page_content for doc in docs]
+        snippet_ids = [doc.metadata['snippet_id'] for doc in docs]
+        flags = [doc.metadata['flag'] for doc in docs]
+
+        result = RetrievalResult(
+            state_type = "RETRIEVE",
+            context = query, 
+            retrieved_snippets = retrieved_snippets, # TODO content_str, 
+            retrieved_sources = snippet_ids, 
+            flags = flags,
+            relevance_scores = relevance_scores
+        )
+        return result
+
+    def get_unseen_snippet_ids(self, state):
+        """
+        Get the snippet IDs that have not been seen yet.
+        """
+        seen_snippet_ids = set()
+        for s in state:
+            if s.state_type == 'RETRIEVE':
+                seen_snippet_ids.update(s.retrieved_sources)
+        return self.set_all_snippet_ids - seen_snippet_ids
+
+    def cache_function(self, state):
+
+        if not self.use_cache:
+            return None
+        
+        unseen_snippet_ids = self.get_unseen_snippet_ids(state)
+        unseen_snippet_ids_list = list(unseen_snippet_ids)
+        return dict(snippet_id=unseen_snippet_ids_list)
+
+
+    def retrieve(self, state, query: str):
+
+        print("#" * 25 + "RETRIEVE Input" + "#" * 25)
+        print(query)
+        
+        docs_with_scores = self.vectorstore.similarity_search_with_relevance_scores(
+            query, 
+            k = self.search_kwargs.get('k'), # default 4
+            filter=self.cache_function(state),
+            k_fetch = self.search_kwargs.get('k_fetch'), # default 20
+            )
+        
+        result = self.format_retrieval_result(query, docs_with_scores)
+
+        print("#" * 25 + "RETRIEVE Output" + "#" * 25)
+        print(result.retrieved_snippets)  
+
+        return result
+
+class MMRetrievalInstructParaphrasing(Retrieval):
+    pass
 
 class Answer():
     """
