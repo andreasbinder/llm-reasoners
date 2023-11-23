@@ -27,7 +27,9 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
         #, "retrieved_snippets": x.state[-1].retrieved_snippets
         return {
             "context": x.state[-1].context,
-            "snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
+            
+            #"snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
+            "snippet_id": x.state[-1].retrieved_sources,
             "flags": x.state[-1].flags, 
             "relevance_scores": [f'{relevance_score:.3f}'  for relevance_score in x.state[-1].relevance_scores],
             } 
@@ -123,15 +125,52 @@ def rap_gsm8k(base_model: LanguageModel,
  
     webqa_results = {}
 
+    ###########################################################################
+
+    device = 'cuda'
+    from models import InstructBlip
+    import torch
+    instructblip = InstructBlip(
+        checkpoint="Salesforce/instructblip-vicuna-7b", 
+        device=device, 
+        generation_config={
+        "max_length": 128,
+        "num_beams": 5,
+        "do_sample": False,
+        #"temperature": 0.7
+    },
+        bnb_config= {
+        "load_in_4bit": True,
+        "load_in_8bit": False,
+        #"bnb_4bit_compute_dtype":torch.float16
+    })
+    # from unittest.mock import MagicMock
+    # instructblip = MagicMock()
+    # instructblip.generate_caption.return_value = "A mock caption for the image."
+    from transformers import CLIPModel, CLIPProcessor
+    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    clip_model.to(device)
+    ###########################################################################
+
     if len(dataset) < 3:
         print("dataset: ", dataset)
 
     for key in tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm):
         
+        # from copy import deepcopy
+        # example = deepcopy(dataset[key])
         example = dataset[key]
         print("#" * 25 + "Case Number: "+ str(example["Guid"]) + "#" * 25)
-        
+        ###########################################################################
+        example["instruct_blip"] = instructblip
+        example["clip_processor"] = clip_processor
+        example["clip_model"] = clip_model
+
+        ###########################################################################
+
+
         algo_output = reasoner(example)
 
         answer = algo_output.terminal_state[-1].main_answer
@@ -143,6 +182,14 @@ def rap_gsm8k(base_model: LanguageModel,
 
         dataset[key]['answer'] = answer[0]
         dataset[key].pop('path', None)
+
+        dataset[key].pop('instruct_blip', None)
+        dataset[key].pop('clip_processor', None)
+        dataset[key].pop('clip_model', None)
+        # ["instruct_blip"] = instructblip
+        # dataset[key]["clip_processor"] = clip_processor
+        # dataset[key]["clip_model"] = clip_model
+
         # webqa_results.update({
         #     example["Guid"]: {
         #         # for manual inspection
