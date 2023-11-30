@@ -70,9 +70,9 @@ class RetrievalResult(NamedTuple):
     relevance_scores: List[float]
     is_gold: List[bool] 
 
-from retrieval_base import BaseRetrieval
+#from retrieval_base import BaseRetrieval
 
-class MPNetRetrieval(BaseRetrieval):
+class MPNetRetrieval():
     def __init__(self, example, hyparams):
         super().__init__() # TODO think if parent necessar
         # Extracting parameters from hyparams
