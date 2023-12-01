@@ -201,6 +201,7 @@ def rap_gsm8k(base_model: LanguageModel,
         dataset[key].pop('clip_processor', None)
         dataset[key].pop('clip_model', None)
         dataset[key].pop('embedding_model', None)
+        dataset[key].pop('caption_model', None)
         # ["instruct_blip"] = instructblip
         # dataset[key]["clip_processor"] = clip_processor
         # dataset[key]["clip_model"] = clip_model

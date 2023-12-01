@@ -113,6 +113,7 @@ class RetrievalBase():
             'path_to_para', 
             '/home/stud/abinder/master-thesis/data/n_samples_50_split_val_solution_img_seed_42_1691423195.1279488_samples_dict_paraphrased.json'
             )
+        self.use_caption_model = hyparams.get('use_caption_model', False)
 
         # Initialize embeddings and source material dictionaries
         self.embeddings = {}
@@ -295,7 +296,7 @@ class RetrievalBase():
             content_type = source_data['type']
 
             # Check if the content type is 'image'
-            if content_type == 'image':
+            if content_type == 'image' and self.use_caption_model:
                 # Fetch the image using its ID
                 image = fetch_images_by_id(
                     [id],
