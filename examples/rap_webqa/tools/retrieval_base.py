@@ -247,7 +247,7 @@ class RetrievalBase():
         return search_results
 
     def retrieve(self, state, query):
-        query = "\"What color are the bricks nearest the ground in Buildwas Abbey Chapter House roof?\""
+        
         search_results = self.search(query)
         retrieved_data = self.process_search_results(search_results, query)
 
