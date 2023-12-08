@@ -155,15 +155,53 @@ def rap_gsm8k(base_model: LanguageModel,
     # clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     # clip_model.to(device)
 
+
+
+
+    #HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
+    #print("HF_memory_footprint: ", HF_memory_footprint)
+    
+
     from models.mpnet_model import MPNetEmbedder
     checkpoint = "sentence-transformers/all-mpnet-base-v2"
     embedding_model = MPNetEmbedder(checkpoint)
 
     from models.llava_model import LLAVAModel
-    model_path = "liuhaotian/llava-v1.5-13b"
+    #model_path = "liuhaotian/llava-v1.5-13b"
+    model_path = "liuhaotian/llava-v1.5-7b"
     model_base = None
-    caption_model = LLAVAModel(model_path, model_base)
+    caption_model = LLAVAModel(model_path, model_base, load_8bit=True)
+    #caption_model = ''
     ###########################################################################
+
+    def footprint(base_model, caption_model):
+        print("#" * 25 + "Footprint" + "#" * 25)
+        # Footprints
+        # Base Model
+        print("Base Model Footprint")
+        try:
+            base_model_footprint = base_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+            print(base_model_footprint)
+        except:
+            print("No base model footprint")
+            
+        print("Caption Model Footprint")
+        try:
+            caption_model_footprint = caption_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+            print(caption_model_footprint)
+        except:
+            print("No caption_model footprint")
+
+        try:
+            print("Allocated Memory")
+            import torch
+            print(torch.cuda.memory_allocated())
+            print(torch.cuda.max_memory_allocated())
+        except:
+            pass
+        
+        print("#" * 25 + "" + "#" * 25)
+    footprint(base_model, caption_model)
 
     if len(dataset) < 3:
         print("dataset: ", dataset)
