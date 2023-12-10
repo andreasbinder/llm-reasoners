@@ -72,7 +72,7 @@ class GSM8kConfig(SearchConfig):
         temperature = 0.0001 if at_depth_limit else self.temperature #TODO
         selected_actions = []
 
-        max_attempts = 5
+        max_attempts = 3
         for idx in range(0, n_actions, self.batch_size):
             n_samples = min(n_actions - idx, self.batch_size)
             # selected_actions += self.base_model.generate([model_input] * n_samples,
@@ -86,6 +86,7 @@ class GSM8kConfig(SearchConfig):
                                                 hide_input=True,
                                                 do_sample=True,
                                                 temperature=temperature,
+                                                max_new_tokens=10,
                                                 eos_token_id='\n').text[0]
                 keyword = utils.find_first_appearance(selected_action, available_actions) 
                 if keyword is None:

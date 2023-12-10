@@ -51,10 +51,10 @@
                 "encode_kwargs": {
                     "normalize_embeddings": false
                 },
-                "top_k": 2,
-                "path_to_para": "/home/stud/abinder/master-thesis/data/n_samples_50_split_val_solution_img_seed_42_1691423195.1279488_samples_dict_paraphrased.json",
+                "top_k": 4,
+                "path_to_para": "/home/stud/abinder/master-thesis/data/WebQA_100_samples_caption_paraphrased.json",
                 "use_caption_model": true,
-                "mode": "img"
+                "mode": "mm"
             },
             "description": "Create a textual query to answer an overall question.",
             "history": "This context you can use to formulate the query:",

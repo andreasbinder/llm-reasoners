@@ -182,6 +182,10 @@ class RetrievalBase():
         for item in self.db.get('txt_negFacts', []):
             self.add_to_index(item['snippet_id'], text=item['fact'], is_gold=False)
 
+        # Load and index negative text facts
+        for item in self.db.get('txt_Facts', []):
+            self.add_to_index(item['snippet_id'], text=item['fact'], is_gold=False)
+
     def load_image_data(self):
         pass
 
@@ -374,6 +378,12 @@ class ClipRetrieval(RetrievalBase):
         for image_id, image in zip(neg_image_ids, neg_images):
             self.add_to_index(image_id, image_path=image, is_gold=False)
 
+        # Fetch and index negative image facts
+        neg_image_ids = [item['image_id'] for item in self.db.get('img_Facts', [])]
+        neg_images = fetch_images_by_id(neg_image_ids, self.lineidx_file, self.tsv_file)
+        for image_id, image in zip(neg_image_ids, neg_images):
+            self.add_to_index(image_id, image_path=image, is_gold=False)
+
     def add_to_index(self, id, text=None, image_path=None, is_gold=False):
         if text:
             #text_emb = self.embed_text(text)
@@ -414,6 +424,13 @@ class MPNetRetrieval(RetrievalBase):
                 )
             
         for item in self.db.get('img_negFacts', []):
+            self.add_to_index(
+                item['image_id'], 
+                image_path=self.db_para[str(item['image_id'])], 
+                is_gold=False
+                )
+            
+        for item in self.db.get('img_Facts', []):
             self.add_to_index(
                 item['image_id'], 
                 image_path=self.db_para[str(item['image_id'])], 
