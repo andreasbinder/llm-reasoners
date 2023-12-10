@@ -14,6 +14,24 @@ from world_model import GSM8kWorldModel, GSM8kState, WebQAAction
 from search_config import GSM8kConfig
 import utils
 
+def log_hyparams_with_path(json_data, path=[]):
+    # If json_data is a dictionary
+    if isinstance(json_data, dict):
+        for key, value in json_data.items():
+            # Append the current key to the path
+            new_path = path + [key]
+            # If the current key is 'hyparams', log its content and the path
+            if key == 'hyparams':
+                print(f"Path: {' -> '.join(new_path)}, hyparams: {value}")
+            # Recursively call the function for nested dictionaries or lists
+            log_hyparams_with_path(value, new_path)
+    # If json_data is a list, iterate through its elements
+    elif isinstance(json_data, list):
+        for index, item in enumerate(json_data):
+            # Append the index to the path for list elements
+            new_path = path + [str(index)]
+            log_hyparams_with_path(item, new_path)
+
 
 def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
     if not x.state:
@@ -180,6 +198,9 @@ def rap_gsm8k(base_model: LanguageModel,
     caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
     #caption_model = ''
     ###########################################################################
+    # TODO log hyparams to out file
+    log_hyparams_with_path(interactive_prompt)
+
 
     def footprint(base_model, caption_model):
         print("#" * 25 + "Footprint" + "#" * 25)
