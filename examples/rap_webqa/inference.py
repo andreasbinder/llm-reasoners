@@ -161,16 +161,23 @@ def rap_gsm8k(base_model: LanguageModel,
     #HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
     #print("HF_memory_footprint: ", HF_memory_footprint)
     
-
+    retrieve_hyparams = interactive_prompt["actions"]["RETRIEVE"]["hyparams"]
+    checkpoint_embedding_model = retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2")
     from models.mpnet_model import MPNetEmbedder
-    checkpoint = "sentence-transformers/all-mpnet-base-v2"
-    embedding_model = MPNetEmbedder(checkpoint)
+    #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+    embedding_model = MPNetEmbedder(checkpoint_embedding_model)
 
     from models.llava_model import LLAVAModel
     #model_path = "liuhaotian/llava-v1.5-13b"
-    model_path = "liuhaotian/llava-v1.5-7b"
-    model_base = None
-    caption_model = LLAVAModel(model_path, model_base, load_8bit=True)
+    #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
+    
+    # model_path = "liuhaotian/llava-v1.5-7b"
+    # model_base = None
+    # load_8bit = True
+    model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
+    model_base = retrieve_hyparams["caption_model"].get("model_base", None)
+    load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
+    caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
     #caption_model = ''
     ###########################################################################
 

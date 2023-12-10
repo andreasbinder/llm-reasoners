@@ -58,7 +58,15 @@
                 "top_k": 4,
                 "path_to_para": "/home/stud/abinder/master-thesis/data/WebQA_100_samples_caption_paraphrased.json",
                 "use_caption_model": true,
-                "mode": "mm"
+                "mode": "mm",
+                "embedding_model": {
+                    "checkpoint": "sentence-transformers/all-mpnet-base-v2"
+                },
+                "caption_model": {
+                    "model_path": "liuhaotian/llava-v1.5-7b",
+                    "model_base": null,
+                    "load_8bit": true
+                }
             },
             "description": "Create a textual query to answer an overall question.",
             "history": "This context you can use to formulate the query:",
