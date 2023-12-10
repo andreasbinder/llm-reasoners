@@ -47,6 +47,10 @@ class GSM8kConfig(SearchConfig):
         self.force_overall_question_on_overall_prompt = force_overall_question_on_overall_prompt
         self.overall_question: Optional[str] = None
 
+        self.action_selection_hyparams = self.prompt["action_selection"]["hyparams"]
+        self.max_attempts = self.action_selection_hyparams.get("max_attempts", 3)
+        self.generation_cutoff = self.action_selection_hyparams.get("generation_cutoff", 3)
+
     def update_example(self, example: str) -> None:
         super().update_example(example)
         # TODO
@@ -72,7 +76,7 @@ class GSM8kConfig(SearchConfig):
         temperature = 0.0001 if at_depth_limit else self.temperature #TODO
         selected_actions = []
 
-        max_attempts = 3
+        
         for idx in range(0, n_actions, self.batch_size):
             n_samples = min(n_actions - idx, self.batch_size)
             # selected_actions += self.base_model.generate([model_input] * n_samples,
@@ -80,13 +84,13 @@ class GSM8kConfig(SearchConfig):
             #                                     do_sample=True,
             #                                     temperature=temperature,
             #                                     eos_token_id='\n').text
-            for i in range(max_attempts):
+            for i in range(self.max_attempts):
                 
                 selected_action = self.base_model.generate([model_input] * n_samples,
                                                 hide_input=True,
                                                 do_sample=True,
                                                 temperature=temperature,
-                                                max_new_tokens=10,
+                                                max_new_tokens=self.generation_cutoff,
                                                 eos_token_id='\n').text[0]
                 keyword = utils.find_first_appearance(selected_action, available_actions) 
                 if keyword is None:

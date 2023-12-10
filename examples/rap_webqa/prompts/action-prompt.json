@@ -21,6 +21,10 @@
         "output_format": "The new subquestion, given the history and main question, is: "
     },
     "action_selection": {
+        "hyparams": {
+            "max_attempts": 3,
+            "generation_cutoff": 10
+        },
         "description": "You were given the task to choose the most promising action to solve an overall question.",
         "options": "The available actions are:",
         "history": "This information is available from each taken action:",
