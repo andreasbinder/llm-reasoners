@@ -9,6 +9,8 @@ from reasoners import SearchConfig, LanguageModel
 
 import utils
 
+import wandb
+
 class GSM8kUsefulPrompt(TypedDict):
     input: str
     question_prefix: str
@@ -51,6 +53,9 @@ class GSM8kConfig(SearchConfig):
         self.max_attempts = self.action_selection_hyparams.get("max_attempts", 3)
         self.generation_cutoff = self.action_selection_hyparams.get("generation_cutoff", 3)
 
+        self.general_hyparams = self.prompt["general"]["hyparams"]
+        self.min_new_tokens = self.general_hyparams.get("min_new_tokens", 3)
+
     def update_example(self, example: str) -> None:
         super().update_example(example)
         # TODO
@@ -66,8 +71,8 @@ class GSM8kConfig(SearchConfig):
         model_input = utils.action_selection_prompt(self.prompt, question, state)
 
         #model_input = action_selection()
-        print("#" * 25 + "Action Selection Input" + "#" * 25)
-        print(model_input)
+        # print("#" * 25 + "Action Selection Input" + "#" * 25)
+        # print(model_input)
 
         available_actions = list(self.prompt["actions"].keys())
 
@@ -75,6 +80,8 @@ class GSM8kConfig(SearchConfig):
         n_actions = 1 if at_depth_limit else self.n_actions
         temperature = 0.0001 if at_depth_limit else self.temperature #TODO
         selected_actions = []
+
+        
 
         
         for idx in range(0, n_actions, self.batch_size):
@@ -91,7 +98,10 @@ class GSM8kConfig(SearchConfig):
                                                 do_sample=True,
                                                 temperature=temperature,
                                                 max_new_tokens=self.generation_cutoff,
+                                                min_new_tokens=self.min_new_tokens,
                                                 eos_token_id='\n').text[0]
+
+                print(f"Complete Selected Action: '{selected_action}'")                                                
                 keyword = utils.find_first_appearance(selected_action, available_actions) 
                 if keyword is None:
                     temperature = self.temperature
@@ -109,15 +119,19 @@ class GSM8kConfig(SearchConfig):
 
         keywords = selected_actions
         
+        print("#" * 25 + "Action Selection" + "#" * 25)
+        for item1, item2 in zip([model_input] * n_actions, keywords):            
+            print(item1, item2, sep='\n')
+            print("#" * 25)
         #keywords = ["RETRIEVE"]
 
-        print("keywords")
-        print(keywords)
+        # print("keywords")
+        # print(keywords)
         
         prompts_per_keyword = [utils.action_prompt(self.prompt, question, state, keyword) if keyword != 'INVALID' else 'INVALID' for keyword in keywords]
         
-        print("#" * 25 + "Action Input" + "#" * 25)
-        print(prompts_per_keyword)
+        # print("#" * 25 + "Action Input" + "#" * 25)
+        # print(prompts_per_keyword)
 
         actions = []
         for keyword, prompt in zip(keywords, prompts_per_keyword):
@@ -133,13 +147,28 @@ class GSM8kConfig(SearchConfig):
                                                     hide_input=True,
                                                     do_sample=True,
                                                     temperature=temperature,
+                                                    min_new_tokens=self.min_new_tokens,
                                                     eos_token_id='\n').text
                 
                 # actions += [keyword + ': ' + model_output[0]]
                 actions += [(keyword, model_output[0])]
                 
-        print("#" * 25 + "Action Output" + "#" * 25)
-        print(actions)
+            # wandb.log({
+            #     str(len(state)): {
+            #         "Action Input": prompt,
+            #         "Action Output": actions[-1][1]
+            #     }
+            # })
+
+        # print("#" * 25 + "Action Output" + "#" * 25)
+        # print(actions)
+
+        
+        print("#" * 25 + "Action Enrichment" + "#" * 25)
+        for item1, item2 in zip(prompts_per_keyword, actions):
+
+            print(item1, item2, sep='\n')
+            print("#" * 25)
 
         # actions = [action.strip() for action in actions]
         if at_depth_limit:

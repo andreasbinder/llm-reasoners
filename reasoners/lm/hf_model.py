@@ -103,6 +103,7 @@ class HFModel(LanguageModel):
         self.model.config.eos_token_id = 2
         # if torch.__version__ >= "2" and sys.platform != "win32":#need to figure out this line
         #     self.model = torch.compile(self.model) ###make the faketensor bug, an on-going issue in pytorch
+    
     def generate(
             self,
             inputs: list[str],
@@ -116,6 +117,7 @@ class HFModel(LanguageModel):
             eos_token_id: Union[None, str, int, list[str, int]] = None,
             hide_input: bool = True,
             output_log_probs: bool = False,
+            min_new_tokens = None,
             **kwargs,
         ) -> GenerateOutput:
 
@@ -151,6 +153,7 @@ class HFModel(LanguageModel):
             do_sample = do_sample,
             top_k=top_k,
             top_p=top_p,
+            min_new_tokens=min_new_tokens
         )
         if max_new_tokens is not None:
             generation_config = GenerationConfig(
@@ -163,6 +166,7 @@ class HFModel(LanguageModel):
             do_sample = do_sample,
             top_k=top_k,
             top_p=top_p,
+            min_new_tokens=min_new_tokens
         )
         
         if num_return_sequences > 1:
@@ -181,6 +185,13 @@ class HFModel(LanguageModel):
                     return_dict_in_generate=True,
                 )
             decoded = self.tokenizer.batch_decode(generation_output.sequences, skip_special_tokens=True)
+            
+            # decoded_illu = copy.deepcopy(decoded)
+
+            # for i in range(len(decoded_illu)):
+            #     if decoded_illu[i].startswith('\n'):
+            #         decoded_illu[i] = decoded_illu[i][1:]
+                    
             if hide_input:
                 for i in range(end-start):
                     decoded[i] = decoded[i][len(inputs[start+i]):]

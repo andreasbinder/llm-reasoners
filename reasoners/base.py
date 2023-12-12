@@ -30,6 +30,7 @@ class LanguageModel(ABC):
                  hide_input: bool = True,
                  output_log_probs: bool = False,
                  stopping_criteria: Optional[StoppingCriteriaList] = None,
+                 min_new_tokens = None,
                  **kwargs) -> GenerateOutput:
         """Generate text from a list of prompts.
 
