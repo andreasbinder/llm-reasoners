@@ -1,6 +1,10 @@
 {
     "general": {
-        "prefix_main": "The overall question is: "
+        "prefix_main": "The overall question is: ",
+        "eval-test": false,
+        "hyparams": {
+            "min_new_tokens": 3
+        }
     },
     "DECOMPOSE": {
         "description": "Create a subquestion relevant to the main question.",
@@ -20,6 +24,25 @@
         },
         "output_format": "The new subquestion, given the history and main question, is: "
     },
+    "old_text_config": {
+        "use_api": false,
+        "use_cache": true,
+        "vector_store_kwargs": {
+            "scoring_mode": "euclidean",
+            "normalize_L2": false
+        },
+        "search_kwargs": {
+            "k": 4,
+            "k_fetch": 20
+        },
+        "model_name": "sentence-transformers/all-mpnet-base-v2",
+        "model_kwargs": {
+            "device": "cuda"
+        },
+        "encode_kwargs": {
+            "normalize_embeddings": false
+        }
+    },
     "action_selection": {
         "hyparams": {
             "max_attempts": 3,
@@ -38,27 +61,12 @@
         },
         "RETRIEVE": {
             "hyparams": {
-                "use_api": false,
-                "use_cache": true,
-                "vector_store_kwargs": {
-                    "scoring_mode": "euclidean",
-                    "normalize_L2": false
-                },
-                "search_kwargs": {
-                    "k": 4,
-                    "k_fetch": 20
-                },
-                "model_name": "sentence-transformers/all-mpnet-base-v2",
-                "model_kwargs": {
-                    "device": "cuda"
-                },
-                "encode_kwargs": {
-                    "normalize_embeddings": false
-                },
+                
                 "top_k": 4,
                 "path_to_para": "/home/stud/abinder/master-thesis/data/WebQA_100_samples_caption_paraphrased.json",
                 "use_caption_model": true,
                 "mode": "mm",
+                "adjust_mod_bias": false,
                 "embedding_model": {
                     "checkpoint": "sentence-transformers/all-mpnet-base-v2"
                 },
@@ -71,8 +79,7 @@
             "description": "Create a textual query to answer an overall question.",
             "history": "This context you can use to formulate the query:",
             "examples": "Examples of retrieved information:",
-            "output_format": "What is the textual query towards the document retriever?",
-            "dep1_output_format": "The textual query towards the document retriever is:"
+            "output_format": "What is the textual query towards the document retriever?"
         } 
     }       
 }

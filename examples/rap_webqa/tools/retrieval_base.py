@@ -255,6 +255,13 @@ class RetrievalBase():
         search_results = self.search(query)
         retrieved_data = self.process_search_results(search_results, query)
 
+        print("#" * 25 + "RETRIEVE" + "#" * 25)
+        print(query)
+        for item1, item2 in zip(retrieved_data['modalities'], retrieved_data['snippets']):
+
+            print(item1, item2, sep='\n')
+            print("#" * 25)
+
         result = RetrievalResult(
             state_type="RETRIEVE",
             context=query,

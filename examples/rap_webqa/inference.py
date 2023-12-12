@@ -14,6 +14,11 @@ from world_model import GSM8kWorldModel, GSM8kState, WebQAAction
 from search_config import GSM8kConfig
 import utils
 
+import wandb
+wandb.init()
+
+
+
 def log_hyparams_with_path(json_data, path=[]):
     # If json_data is a dictionary
     if isinstance(json_data, dict):
@@ -185,6 +190,10 @@ def rap_gsm8k(base_model: LanguageModel,
     #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
     embedding_model = MPNetEmbedder(checkpoint_embedding_model)
 
+    #from models.clip_model import CLIP
+    #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+    #embedding_model = CLIP("laion/CLIP-ViT-H-14-laion2B-s32B-b79K", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+
     from models.llava_model import LLAVAModel
     #model_path = "liuhaotian/llava-v1.5-13b"
     #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
@@ -233,6 +242,76 @@ def rap_gsm8k(base_model: LanguageModel,
 
     if len(dataset) < 3:
         print("dataset: ", dataset)
+
+    #   --base_lm hf \
+    #   --hf_path lmsys/vicuna-7b-v1.5 \
+    #   --hf_peft_path None \
+    #   --hf_quantized nf4 \
+
+    action_selection = interactive_prompt["action_selection"]["hyparams"]
+    # TODO
+    # config = {
+    #     "LLM"
+    #     "Action.RETRIEVE" : retrieve_hyparams,
+    #     "ActionSelection" : action_selection,
+    # }
+    # wandb.init(config=config)
+
+    # model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
+    # model_base = retrieve_hyparams["caption_model"].get("model_base", None)
+    # load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
+
+    # wandb.config.update({
+    #     "VLM": {
+    #         "model_path": retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b"),
+    #         "model_base": retrieve_hyparams["caption_model"].get("model_base", None),
+    #         "load_8bit": retrieve_hyparams["caption_model"].get("load_8bit", True),
+    #     }
+    # })
+    # wandb.config.update({
+    #     "Embedding": {
+    #         "checkpoint": retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2"),
+    #     }
+    # })
+    wandb.config.update({
+        "Search Config": {
+            "n_action": n_action,
+            "n_confidence": n_confidence,
+            "depth_limit": depth_limit,
+            **search_algo_params
+        }
+    })
+    wandb.config.update({
+        "ActionSelection": {
+            **interactive_prompt["action_selection"]["hyparams"]
+        }
+    })
+    available_actions = list(interactive_prompt["actions"].keys())
+    for act in available_actions:
+        wandb.config.update({
+            f"Action.{act}": {
+                **interactive_prompt["actions"][act]
+            }
+        })
+    # wandb.config.update({
+    #     "Action.RETRIEVE": {
+    #         "top_k": retrieve_hyparams["top_k"],
+    #         "path_to_para": retrieve_hyparams["path_to_para"],
+    #         "use_caption_model": retrieve_hyparams["use_caption_model"],
+    #         "mode": retrieve_hyparams["mode"],
+    #         "adjust_mod_bias": retrieve_hyparams["adjust_mod_bias"],
+    #     }
+    # })
+    # necessary, not part of json
+    wandb.config.update({
+        "Data": {
+            "split": split,
+            "indices": resume,
+        }
+    })
+    wandb.config.update({
+        "Configs & Prompts": interactive_prompt
+    })
 
     for key in tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm):
@@ -307,6 +386,15 @@ def rap_gsm8k(base_model: LanguageModel,
     with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
         json.dump(dataset, json_file, indent=4)
 
+    # TODO local eval
+    #if split == "test":
+    if interactive_prompt["general"]["eval-test"]:
+        from eval import evaluate
+        output = evaluate(dataset, "test")['submission_result']
+
+        wandb.summary.update(output)
+
+
 
 if __name__ == '__main__':
     import os
@@ -343,7 +431,17 @@ if __name__ == '__main__':
              disable_tqdm: bool = False,
              **kwargs):
         with open(interactive_prompt) as f:
+
+            # artifact = wandb.Artifact('my_artifact', type='config')
+            # artifact.add_file(interactive_prompt)
+
+            # # Log the artifact
+            # wandb.log_artifact(artifact)
+
             interactive_prompt = json.load(f)
+
+            
+
         with open(useful_prompt) as f:
             useful_prompt = json.load(f)
         if base_lm in ['llama', 'llama2']:
@@ -360,6 +458,16 @@ if __name__ == '__main__':
         print("exllama_model_dir: ", exllama_model_dir)
         print("hf_path: ", hf_path)
 
+        #     config = {
+        #     "LLM"
+        #     "Action.RETRIEVE" : retrieve_hyparams,
+        #     "ActionSelection" : action_selection,
+        # }
+        wandb.config.update({
+            "CLI": locals()
+        })
+        
+
         if base_lm == 'llama':
             from reasoners.lm import LlamaModel
             base_model = LlamaModel(llama_ckpts, llama_size, max_batch_size=batch_size)
@@ -371,6 +479,13 @@ if __name__ == '__main__':
             base_model = Llama2Model(llama_2_ckpts, llama_size, max_batch_size=batch_size)
         elif base_lm == 'hf':
             from reasoners.lm import HFModel
+            wandb.config.update({
+                "LLM": {
+                    "hf_path": hf_path,
+                    "hf_peft_path": hf_peft_path,
+                    "hf_quantized": hf_quantized,
+                }
+            })
             base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=512,
                                  peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
         elif base_lm == 'exllama':
