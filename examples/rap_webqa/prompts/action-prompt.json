@@ -1,7 +1,7 @@
 {
     "general": {
         "prefix_main": "The overall question is: ",
-        "eval-test": false,
+        "eval-test": true,
         "hyparams": {
             "min_new_tokens": 3
         }

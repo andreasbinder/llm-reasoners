@@ -273,26 +273,26 @@ def rap_gsm8k(base_model: LanguageModel,
     #         "checkpoint": retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2"),
     #     }
     # })
-    wandb.config.update({
-        "Search Config": {
-            "n_action": n_action,
-            "n_confidence": n_confidence,
-            "depth_limit": depth_limit,
-            **search_algo_params
-        }
-    })
-    wandb.config.update({
-        "ActionSelection": {
-            **interactive_prompt["action_selection"]["hyparams"]
-        }
-    })
-    available_actions = list(interactive_prompt["actions"].keys())
-    for act in available_actions:
-        wandb.config.update({
-            f"Action.{act}": {
-                **interactive_prompt["actions"][act]
-            }
-        })
+    # wandb.config.update({
+    #     "Search Config": {
+    #         "n_action": n_action,
+    #         "n_confidence": n_confidence,
+    #         "depth_limit": depth_limit,
+    #         **search_algo_params
+    #     }
+    # })
+    # wandb.config.update({
+    #     "ActionSelection": {
+    #         **interactive_prompt["action_selection"]["hyparams"]
+    #     }
+    # })
+    # available_actions = list(interactive_prompt["actions"].keys())
+    # for act in available_actions:
+    #     wandb.config.update({
+    #         f"Action.{act}": {
+    #             **interactive_prompt["actions"][act]
+    #         }
+    #     })
     # wandb.config.update({
     #     "Action.RETRIEVE": {
     #         "top_k": retrieve_hyparams["top_k"],
@@ -303,16 +303,13 @@ def rap_gsm8k(base_model: LanguageModel,
     #     }
     # })
     # necessary, not part of json
-    wandb.config.update({
-        "Data": {
-            "split": split,
-            "indices": resume,
-        }
-    })
-    wandb.config.update({
-        "Configs & Prompts": interactive_prompt
-    })
-
+    # wandb.config.update({
+    #     "Data": {
+    #         "split": split,
+    #         "indices": resume,
+    #     }
+    # })
+    
     for key in tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm):
         
@@ -466,6 +463,10 @@ if __name__ == '__main__':
         wandb.config.update({
             "CLI": locals()
         })
+        # wandb.config.update({
+        #     "Configs & Prompts": interactive_prompt
+        # })
+
         
 
         if base_lm == 'llama':
@@ -479,13 +480,13 @@ if __name__ == '__main__':
             base_model = Llama2Model(llama_2_ckpts, llama_size, max_batch_size=batch_size)
         elif base_lm == 'hf':
             from reasoners.lm import HFModel
-            wandb.config.update({
-                "LLM": {
-                    "hf_path": hf_path,
-                    "hf_peft_path": hf_peft_path,
-                    "hf_quantized": hf_quantized,
-                }
-            })
+            # wandb.config.update({
+            #     "LLM": {
+            #         "hf_path": hf_path,
+            #         "hf_peft_path": hf_peft_path,
+            #         "hf_quantized": hf_quantized,
+            #     }
+            # })
             base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=512,
                                  peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
         elif base_lm == 'exllama':
