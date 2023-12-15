@@ -329,12 +329,24 @@ def rap_gsm8k(base_model: LanguageModel,
 
         algo_output = reasoner(example)
 
+        ####  retrieve output
+        predicted_sources = [
+            source
+            for winning_state in algo_output.terminal_state if winning_state.state_type == "RETRIEVE"
+            for source in winning_state.retrieved_sources
+        ]
+        dataset[key]['sources'] = predicted_sources
+        #x.state[-1].state_type == "RETRIEVE"
+        ####
+
         answer = algo_output.terminal_state[-1].main_answer
         A = example["A"]
         guid = example["Guid"]
         print(f'Prediction: {answer}')
         print(f'Answer: {A}')
         log_str = f'Guid: {example["Guid"]} Prediction: {answer} Ground-truth: {A}'
+
+        #answer = algo_output.terminal_state
 
         dataset[key]['answer'] = answer[0]
         dataset[key].pop('path', None)
@@ -390,6 +402,53 @@ def rap_gsm8k(base_model: LanguageModel,
         output = evaluate(dataset, "test")['submission_result']
 
         wandb.summary.update(output)
+
+    if interactive_prompt["general"]["eval-val"]:
+        # from eval import evaluate
+        # output = evaluate(dataset, "test")['submission_result']
+
+        # wandb.summary.update(output)
+        from pathlib import Path
+        with open(Path(path_to_webqa), 'r') as file:
+            webqa_data = json.load(file)
+        
+        def calculate_recall_f1(positive_ids, predicted_positive_ids):
+            TP = len(set(positive_ids) & set(predicted_positive_ids))
+            FN = len(set(positive_ids) - set(predicted_positive_ids))
+            FP = len(set(predicted_positive_ids) - set(positive_ids))
+
+            # Calculate precision and recall
+            precision = TP / (TP + FP) if TP + FP else 0
+            recall = TP / (TP + FN) if TP + FN else 0
+
+            # Calculate F1 score
+            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
+
+            return recall, f1_score
+
+        for key in tqdm(dataset, total=len(dataset),
+                                     desc='Eval Retrieval', disable=disable_tqdm):
+            
+            sample = webqa_data[key]
+
+            pos_facts = [
+                image_id['image_id'] for image_id in sample["img_posFacts"]
+            ]
+            pos_facts += [
+                snippet_id['snippet_id'] for snippet_id in sample["txt_posFacts"]
+            ]
+
+            predicted_sources = dataset[key]['sources']
+            
+            print(f"predicted_sources: {predicted_sources}")
+            print(f"pos_facts: {pos_facts}")
+
+            recall, f1_score = calculate_recall_f1(pos_facts, predicted_sources)
+            print(f"Recall: {recall}, F1 Score: {f1_score}")
+
+            wandb.summary.update({"Retrieval":f1_score})
+
+        
 
 
 

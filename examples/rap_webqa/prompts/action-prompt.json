@@ -1,7 +1,8 @@
 {
     "general": {
         "prefix_main": "The overall question is: ",
-        "eval-test": true,
+        "eval-test": false,
+        "eval-val": true,
         "hyparams": {
             "min_new_tokens": 3
         }
@@ -63,7 +64,7 @@
             "hyparams": {
                 
                 "top_k": 4,
-                "path_to_para": "/home/stud/abinder/master-thesis/data/WebQA_100_samples_caption_paraphrased.json",
+                "path_to_para": "/home/stud/abinder/master-thesis/data/n_samples_50_split_val_solution_img_seed_42_1691423195.1279488_samples_dict_paraphrased.json",
                 "use_caption_model": true,
                 "mode": "mm",
                 "adjust_mod_bias": false,
