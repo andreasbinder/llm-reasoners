@@ -74,14 +74,23 @@ class GSM8kConfig(SearchConfig):
         # print("#" * 25 + "Action Selection Input" + "#" * 25)
         # print(model_input)
 
-        available_actions = list(self.prompt["actions"].keys())
+        #available_actions = list(self.prompt["actions"].keys())
+        available_actions = ["ANSWER", "RETRIEVE"]
 
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
         temperature = 0.0001 if at_depth_limit else self.temperature #TODO
         selected_actions = []
 
-        
+        # TODO improvement to avoid unnecessary generation
+        if at_depth_limit:
+
+            # actions = ['ANSWER' + ': ' + question for _ in actions]
+            actions = [('ANSWER', question) for _ in range(n_actions)]
+            # set does not guarantee order, but dict does guarantee
+            # we cannot use set here because torch.distributed in LLaMA requires the same order across all processes
+            actions = list(dict.fromkeys(actions))
+            return actions
 
         
         for idx in range(0, n_actions, self.batch_size):
@@ -190,7 +199,7 @@ class GSM8kConfig(SearchConfig):
         if keyword == 'INVALID':
             return 0, {'r_useful': 0}
 
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, details)
+        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, action)
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
         print(model_input)

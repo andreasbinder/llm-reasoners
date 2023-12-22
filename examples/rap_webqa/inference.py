@@ -59,6 +59,12 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
             "is_gold": x.state[-1].is_gold, 
             "relevance_scores": [f'{relevance_score:.3f}'  for relevance_score in x.state[-1].relevance_scores],
             } 
+    elif x.state[-1].state_type == "HYPOTHESIS":
+        #, "retrieved_snippets": x.state[-1].retrieved_snippets
+        return {
+            "proposition": x.state[-1].proposition,    
+            "comment": x.state[-1].comment    
+            } 
     elif x.state[-1].state_type == "INVALID":
         return {
             "content": "INVALID"
@@ -375,8 +381,10 @@ def rap_gsm8k(base_model: LanguageModel,
         #     }
         # })
         # save after every example in case of intermediate failures
-        with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
-            json.dump(dataset, json_file, indent=4)
+        # with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
+        #     json.dump(dataset, json_file, indent=4)
+        with open(os.path.join(log_dir, f'webqa.json'), 'w') as json_file:
+            json.dump(dataset, json_file, indent=4)    
 
         tqdm.write(log_str)
         if not disable_log:
@@ -384,15 +392,18 @@ def rap_gsm8k(base_model: LanguageModel,
                 print(log_str, file=f)
               
             # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
-            with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.pkl'), 'wb') as f:
+            #with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.pkl'), 'wb') as f:
+            with open(os.path.join(log_dir, 'algo_output', f'{example["Guid"]}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
                 # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
-                with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.json'), 'w') as f: 
+                #with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.json'), 'w') as f: 
+                with open(os.path.join(log_dir, 'algo_output', f'{example["Guid"]}.json'), 'w') as f: 
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
-    with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
+    #with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
+    with open(os.path.join(log_dir, f'webqa.json'), 'w') as json_file:
         json.dump(dataset, json_file, indent=4)
 
     # TODO local eval
@@ -412,41 +423,77 @@ def rap_gsm8k(base_model: LanguageModel,
         with open(Path(path_to_webqa), 'r') as file:
             webqa_data = json.load(file)
         
-        def calculate_recall_f1(positive_ids, predicted_positive_ids):
-            TP = len(set(positive_ids) & set(predicted_positive_ids))
-            FN = len(set(positive_ids) - set(predicted_positive_ids))
-            FP = len(set(predicted_positive_ids) - set(positive_ids))
+        # def calculate_recall_f1(positive_ids, predicted_positive_ids):
+        #     TP = len(set(positive_ids) & set(predicted_positive_ids))
+        #     FN = len(set(positive_ids) - set(predicted_positive_ids))
+        #     FP = len(set(predicted_positive_ids) - set(positive_ids))
 
-            # Calculate precision and recall
-            precision = TP / (TP + FP) if TP + FP else 0
-            recall = TP / (TP + FN) if TP + FN else 0
+        #     # Calculate precision and recall
+        #     precision = TP / (TP + FP) if TP + FP else 0
+        #     recall = TP / (TP + FN) if TP + FN else 0
 
-            # Calculate F1 score
-            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
+        #     # Calculate F1 score
+        #     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
 
-            return recall, f1_score
+        #     return recall, f1_score
 
-        for key in tqdm(dataset, total=len(dataset),
-                                     desc='Eval Retrieval', disable=disable_tqdm):
+        # for key in tqdm(dataset, total=len(dataset),
+        #                              desc='Eval Retrieval', disable=disable_tqdm):
             
-            sample = webqa_data[key]
+        #     sample = webqa_data[key]
 
-            pos_facts = [
-                image_id['image_id'] for image_id in sample["img_posFacts"]
-            ]
-            pos_facts += [
-                snippet_id['snippet_id'] for snippet_id in sample["txt_posFacts"]
-            ]
+        #     pos_facts = [
+        #         image_id['image_id'] for image_id in sample["img_posFacts"]
+        #     ]
+        #     pos_facts += [
+        #         snippet_id['snippet_id'] for snippet_id in sample["txt_posFacts"]
+        #     ]
 
-            predicted_sources = dataset[key]['sources']
+        #     predicted_sources = dataset[key]['sources']
             
-            print(f"predicted_sources: {predicted_sources}")
-            print(f"pos_facts: {pos_facts}")
+        #     print(f"predicted_sources: {predicted_sources}")
+        #     print(f"pos_facts: {pos_facts}")
 
-            recall, f1_score = calculate_recall_f1(pos_facts, predicted_sources)
-            print(f"Recall: {recall}, F1 Score: {f1_score}")
+        #     recall, f1_score = calculate_recall_f1(pos_facts, predicted_sources)
+        #     print(f"Recall: {recall}, F1 Score: {f1_score}")
 
-            wandb.summary.update({"Retrieval":f1_score})
+        #     wandb.summary.update({"Retrieval":f1_score})
+
+        #     with open(os.path.join(log_dir, f'run_id.txt'), 'w') as file:
+        #         file.write(wandb.run.id)
+
+            #### SERVER EVAL
+
+        url = "http://127.0.0.1:8000/evaluate"
+
+        #file = json.loads(open("/home/stud/abinder/logs/webqa_MCTS/12162023-142428/webqa.json").read())
+
+        data_to_send = {
+            "data": dataset
+        }
+
+        # Convert your data to JSON
+        data_json = json.dumps(data_to_send)
+        import requests
+        # Send POST request
+        response = requests.post(url, data=data_json)
+
+        # Check if the request was successful
+        # if response.status_code == 200:
+        #     print("Response from server:", response.json())
+        # else:
+        #     print(f"Failed to get response, status code: {response.status_code}")
+
+        #print(response.json())
+        payload = response.json()
+        metrics = payload["metrics"]
+        #wandb.summary.update({"Retrieval":f1_score, **metrics})
+        wandb.summary.update({**metrics})
+
+        updated_dataset = payload["updated_data"]
+        with open(os.path.join(log_dir, f'webqa-evaluated.json'), 'w') as json_file:
+            json.dump(updated_dataset, json_file, indent=4)
+
 
         
 
@@ -485,6 +532,7 @@ if __name__ == '__main__':
              useful_prompt: str = 'examples/rap_gsm8k/prompts/useful_examples.json',
              disable_log: bool = False,
              disable_tqdm: bool = False,
+             seed : int = None,
              **kwargs):
         with open(interactive_prompt) as f:
 
@@ -509,6 +557,14 @@ if __name__ == '__main__':
             torch.cuda.manual_seed(0)
             torch.backends.cudnn.deterministic = True
 
+        # import torch
+        # import torch.backends.cudnn
+        # np.random.seed(0)
+        # random.seed(0)
+        # torch.manual_seed(0)
+        # torch.cuda.manual_seed(0)
+        # torch.backends.cudnn.deterministic = True
+
         # TODO
         print("base_lm: ", base_lm)
         print("exllama_model_dir: ", exllama_model_dir)
@@ -525,8 +581,16 @@ if __name__ == '__main__':
         # wandb.config.update({
         #     "Configs & Prompts": interactive_prompt
         # })
+        if seed is not None:
+            
+            import torch
+            import torch.backends.cudnn
+            np.random.seed(0)
+            random.seed(0)
+            torch.manual_seed(0)
+            torch.cuda.manual_seed(0)
+            torch.backends.cudnn.deterministic = True
 
-        
 
         if base_lm == 'llama':
             from reasoners.lm import LlamaModel
