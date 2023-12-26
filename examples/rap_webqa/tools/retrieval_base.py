@@ -533,6 +533,8 @@ class RetrievalResult(NamedTuple):
     relevance_scores: List[float]
     is_gold: List[bool] 
 
+
+
 #from retrieval_base import BaseRetrieval
 
 # class ClipRetrieval():

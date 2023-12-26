@@ -40,6 +40,12 @@ class DecomposeResult(NamedTuple):
 #     relevance_scores: List[float]
 # RetrievalResult = namedtuple("RETRIEVE", ["context", "retrieved_snippets", "retrieved_sources"])
 
+class HypothesisResult(NamedTuple):
+    state_type: str
+    proposition: str
+    comment: str
+    confidence: float
+
 class AnswerResult(NamedTuple):
     state_type: str
     main_question: str
@@ -638,7 +644,10 @@ class Answer():
             AnswerResult: An object containing the action, question, generated answer, and confidence level.
         """
         
-        model_input = utils.answer_prompt(prompt, self.question, state, "ANSWER")
+        #model_input = utils.answer_prompt(prompt, self.question, state, "ANSWER")
+        
+        model_input = utils.action_prompt(prompt, self.question, state, "ANSWER")
+        
         print("#" * 25 + "ANSWER Input" + "#" * 25)
         print(model_input)
 
@@ -646,6 +655,7 @@ class Answer():
                                             hide_input=True,
                                             do_sample=True,
                                             temperature=self.temperature,
+                                            min_new_tokens=3,
                                             eos_token_id='\n').text
         print("#" * 25 + "ANSWER Output" + "#" * 25)
         print(answer)
@@ -653,6 +663,65 @@ class Answer():
         confidence = 0.8
         result = AnswerResult("ANSWER", self.question, answer, confidence)
         return result
+
+class Hypothesis():
+    """
+    A class to generate answers for given prompts using a machine learning model.
+    
+    Attributes:
+        base_model (BaseModel): The machine learning model used to generate answers.
+        temperature (float): The sampling temperature to use when generating answers.
+        question (str): The question for which the answer is generated.
+    """
+
+    def __init__(self, base_model, temperature, example) -> None:
+        """
+        Constructs all the necessary attributes for the AnswerGenerator object.
+        
+        Parameters:
+            base_model (BaseModel): The pre-trained base model for generating answers.
+            temperature (float): A coefficient to control the randomness of predictions
+                                 by scaling the logits before applying softmax.
+            example (dict): A dictionary containing a 'question' key.
+        """
+        self.base_model = base_model
+        self.temperature = temperature
+        self.question = example['Q']
+
+    def comment(self, prompt, state: str, details) -> str:
+        """
+        Generates an answer for the given prompt.
+
+        Parameters:
+            prompt (str): The prompt to which the model should respond.
+            state (dict): The current state information to be considered by the model.
+
+        Returns:
+            AnswerResult: An object containing the action, question, generated answer, and confidence level.
+        """
+        
+        model_input = utils.hypothesis_prompt(prompt, self.question, state, "HYPOTHESIS", details)
+        print("#" * 25 + "HYPOTHESIS Input" + "#" * 25)
+        print(model_input)
+
+        answer = self.base_model.generate([model_input],
+                                            hide_input=True,
+                                            do_sample=True,
+                                            temperature=self.temperature,
+                                            eos_token_id='\n').text
+        print("#" * 25 + "HYPOTHESIS Output" + "#" * 25)
+        print(answer)
+
+        confidence = 0.8
+        #result = AnswerResult("ANSWER", self.question, answer, confidence)
+        result = HypothesisResult(
+            state_type = "HYPOTHESIS",
+            proposition = details,
+            comment = answer,
+            confidence = confidence
+        )
+        return result
+
 
 class Toolbox():
     def __init__(self, world_model) -> None:
@@ -670,7 +739,12 @@ class Toolbox():
             temperature=self.world_model.temperature,
             example = self.example
         )
-        self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID']
+        self.hypothesize = Hypothesis(
+            base_model=self.world_model.base_model,
+            temperature=self.world_model.temperature,
+            example = self.example
+        )
+        self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID', 'HYPOTHESIS']
 
     def execute_tool(self, prompt, example, state, action: str) -> str:
         #keyword = utils.find_first_appearance(action, self.keywords)
@@ -681,6 +755,9 @@ class Toolbox():
         elif keyword == 'RETRIEVE':
             #return self.retrieval.retrieve(action)
             return self.retrieval.retrieve(state, details)
+        elif keyword == 'HYPOTHESIS':
+            #return self.retrieval.retrieve(action)
+            return self.hypothesize.comment(prompt, state, details)
         elif keyword == 'INVALID':
             return InvalidResult("INVALID", "INVALID")
         else:

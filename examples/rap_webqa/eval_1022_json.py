@@ -270,6 +270,33 @@ print("fluency_avg = {}".format(fluency_avg))
 print("acc_avg = {}".format(acc_avg))
 print("mul_avg = {}".format(mul_avg))
 print(" ------------------------------------------------------------------------------------ \n")
+#####
+#run_identifier = os.getenv("WANDB_NAME") 
+#run_identifier = "andreasjbinder/RAP-WebQA/n1e5s63x"
+
+#run = api.run("<entity>/<project>/<run_id>")
+
+entity = os.getenv("WANDB_ENTITY")
+project = os.getenv("WANDB_PROJECT")
+run_id = os.getenv("TEMP_RUN_ID") 
+
+run_identifier = f"{entity}/{project}/{run_id}"
+
+import wandb
+
+api = wandb.Api()
+
+run = api.run(run_identifier)
+# run.summary["key"] = updated_value
+# run.update()
+# 'Retrieval': 0.0, 'QA-FL': 0.3295, 'QA-Acc': 0.3633, 'QA': 0.191}
+run.summary.update({
+    'QA-FL': fluency_avg,
+    'QA-Acc': acc_avg,
+    'QA': mul_avg,
+})
+#####
+
 if not 'all' in Qcate_breakdown: args.file = args.file.split(".")[0] + "_{}".format("|".join(Qcate_breakdown)) + ".tsv"
 
 if args.output_idx > 0: args.file = args.file.replace(".tsv", "_{}.tsv".format(args.output_idx))
