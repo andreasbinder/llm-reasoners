@@ -233,6 +233,12 @@ class RetrievalBase():
     def search(self, query, top_k=None, adjust_mod_bias=False):
         if top_k is None:
             top_k = self.top_k
+
+        # Ensure top_k does not exceed the number of items in the corpus
+        corpus_size = len(self.embeddings)
+        top_k = min(top_k, corpus_size)
+
+
         query_emb = self.embedding_model.embed_text(query) # [1,512]
         corpus_embeddings = torch.stack([self.embeddings[key]['embedding'].squeeze() for key in self.embeddings]) # [N,512]
 
