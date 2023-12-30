@@ -71,7 +71,7 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
             } 
 
 
-def rap_gsm8k(base_model: LanguageModel,
+def rap_webqa(base_model: LanguageModel,
               interactive_prompt: dict,
               useful_prompt: dict,
               search_algo: Type[SearchAlgorithm] = MCTS,
@@ -123,72 +123,7 @@ def rap_gsm8k(base_model: LanguageModel,
     else:
         aggregator = None
 
-    
- 
-    #HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
-    #print("HF_memory_footprint: ", HF_memory_footprint)
-    
-    def load_webqa_dataset(path_to_webqa, resume):
-        from pathlib import Path
-        data = json.loads(Path(path_to_webqa).read_text())
-        if isinstance(resume, str):
-            start_str, end_str = resume.strip('[]').split(',')
-            start, end = int(start_str), int(end_str)
-            selected_indices = list(range(start, end+1))
-        if isinstance(resume, int):
-            selected_indices = [resume]
-        if isinstance(resume, list):
-            selected_indices = list(range(resume[0], resume[1]+1))
-        
-        selected_data = [
-            {
-                "index": idx, 
-                "question": data[idx]["Q"], 
-                "Guid": data[idx]["Guid"], 
-                "ground-truth": data[idx]["A"],
-                "Qcate": data[idx]["Qcate"],
-                "path": path_to_webqa
-            } 
-            for idx in selected_indices if idx < len(data)
-        ]
-        return selected_data
-
     dataset = utils.load_webqa_dataset(path_to_webqa, split, resume)
- 
-    webqa_results = {}
-
-    ###########################################################################
-
-    # device = 'cuda'
-    # from models import InstructBlip
-    # import torch
-    # instructblip = InstructBlip(
-    #     checkpoint="Salesforce/instructblip-vicuna-7b", 
-    #     device=device, 
-    #     generation_config={
-    #     "max_length": 128,
-    #     "num_beams": 5,
-    #     "do_sample": False,
-    #     #"temperature": 0.7
-    # },
-    #     bnb_config= {
-    #     "load_in_4bit": True,
-    #     "load_in_8bit": False,
-    #     #"bnb_4bit_compute_dtype":torch.float16
-    # })
-    # # from unittest.mock import MagicMock
-    # instructblip = MagicMock()
-    # instructblip.generate_caption.return_value = "A mock caption for the image."
-    # from transformers import CLIPModel, CLIPProcessor
-    # clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    # clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-    # clip_model.to(device)
-
-
-
-
-    #HF_memory_footprint = base_model.model.model.get_memory_footprint() if hasattr(base_model.model, 'get_memory_footprint') else None
-    #print("HF_memory_footprint: ", HF_memory_footprint)
     
     retrieve_hyparams = interactive_prompt["actions"]["RETRIEVE"]["hyparams"]
     checkpoint_embedding_model = retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2")
@@ -207,10 +142,14 @@ def rap_gsm8k(base_model: LanguageModel,
     # model_path = "liuhaotian/llava-v1.5-7b"
     # model_base = None
     # load_8bit = True
+
     model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
     model_base = retrieve_hyparams["caption_model"].get("model_base", None)
     load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
     caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+
+    # from models.llava_model_hf import LLAVAModel
+    # caption_model = LLAVAModel()
     #caption_model = ''
     ###########################################################################
     # TODO log hyparams to out file
@@ -249,84 +188,14 @@ def rap_gsm8k(base_model: LanguageModel,
     if len(dataset) < 3:
         print("dataset: ", dataset)
 
-    #   --base_lm hf \
-    #   --hf_path lmsys/vicuna-7b-v1.5 \
-    #   --hf_peft_path None \
-    #   --hf_quantized nf4 \
-
-    action_selection = interactive_prompt["action_selection"]["hyparams"]
-    # TODO
-    # config = {
-    #     "LLM"
-    #     "Action.RETRIEVE" : retrieve_hyparams,
-    #     "ActionSelection" : action_selection,
-    # }
-    # wandb.init(config=config)
-
-    # model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
-    # model_base = retrieve_hyparams["caption_model"].get("model_base", None)
-    # load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
-
-    # wandb.config.update({
-    #     "VLM": {
-    #         "model_path": retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b"),
-    #         "model_base": retrieve_hyparams["caption_model"].get("model_base", None),
-    #         "load_8bit": retrieve_hyparams["caption_model"].get("load_8bit", True),
-    #     }
-    # })
-    # wandb.config.update({
-    #     "Embedding": {
-    #         "checkpoint": retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2"),
-    #     }
-    # })
-    # wandb.config.update({
-    #     "Search Config": {
-    #         "n_action": n_action,
-    #         "n_confidence": n_confidence,
-    #         "depth_limit": depth_limit,
-    #         **search_algo_params
-    #     }
-    # })
-    # wandb.config.update({
-    #     "ActionSelection": {
-    #         **interactive_prompt["action_selection"]["hyparams"]
-    #     }
-    # })
-    # available_actions = list(interactive_prompt["actions"].keys())
-    # for act in available_actions:
-    #     wandb.config.update({
-    #         f"Action.{act}": {
-    #             **interactive_prompt["actions"][act]
-    #         }
-    #     })
-    # wandb.config.update({
-    #     "Action.RETRIEVE": {
-    #         "top_k": retrieve_hyparams["top_k"],
-    #         "path_to_para": retrieve_hyparams["path_to_para"],
-    #         "use_caption_model": retrieve_hyparams["use_caption_model"],
-    #         "mode": retrieve_hyparams["mode"],
-    #         "adjust_mod_bias": retrieve_hyparams["adjust_mod_bias"],
-    #     }
-    # })
-    # necessary, not part of json
-    # wandb.config.update({
-    #     "Data": {
-    #         "split": split,
-    #         "indices": resume,
-    #     }
-    # })
     
     for key in tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm):
         
-        # from copy import deepcopy
-        # example = deepcopy(dataset[key])
         example = dataset[key]
         print("#" * 25 + "Case Number: "+ str(example["Guid"]) + "#" * 25)
         ###########################################################################
-        # example["instruct_blip"] = instructblip
-        # example["clip_processor"] = clip_processor
-        # example["clip_model"] = clip_model
+
         example["embedding_model"] = embedding_model
         example["caption_model"] = caption_model
 
@@ -347,12 +216,11 @@ def rap_gsm8k(base_model: LanguageModel,
 
         answer = algo_output.terminal_state[-1].main_answer
         A = example["A"]
-        guid = example["Guid"]
+        
         print(f'Prediction: {answer}')
         print(f'Answer: {A}')
         log_str = f'Guid: {example["Guid"]} Prediction: {answer} Ground-truth: {A}'
 
-        #answer = algo_output.terminal_state
 
         dataset[key]['answer'] = answer[0]
         dataset[key].pop('path', None)
@@ -362,27 +230,7 @@ def rap_gsm8k(base_model: LanguageModel,
         dataset[key].pop('clip_model', None)
         dataset[key].pop('embedding_model', None)
         dataset[key].pop('caption_model', None)
-        # ["instruct_blip"] = instructblip
-        # dataset[key]["clip_processor"] = clip_processor
-        # dataset[key]["clip_model"] = clip_model
 
-        # webqa_results.update({
-        #     example["Guid"]: {
-        #         # for manual inspection
-        #         "Guid": example["Guid"],   
-        #         "Qcate": example["Qcate"],
-        #         "Q": example["question"], 
-        #         "A": A,
-        #         "Keywords_A" : "TBD",
-        #         # "Output_conf" : [1], # not really needed
-        #         # needed for online evaluation
-        #         "answer": answer[0], # TODO supposed to not be list
-        #         "sources": [], # TODO
-        #     }
-        # })
-        # save after every example in case of intermediate failures
-        # with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
-        #     json.dump(dataset, json_file, indent=4)
         with open(os.path.join(log_dir, f'webqa.json'), 'w') as json_file:
             json.dump(dataset, json_file, indent=4)    
 
@@ -391,13 +239,10 @@ def rap_gsm8k(base_model: LanguageModel,
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
                 print(log_str, file=f)
               
-            # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
-            #with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.pkl'), 'wb') as f:
             with open(os.path.join(log_dir, 'algo_output', f'{example["Guid"]}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
-                # with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
-                #with open(os.path.join(log_dir, 'algo_output', f'{time_prefix}-{example["Guid"]}.json'), 'w') as f: 
+                
                 with open(os.path.join(log_dir, 'algo_output', f'{example["Guid"]}.json'), 'w') as f: 
                     # noinspection PyTypeChecker
                     print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
@@ -415,58 +260,12 @@ def rap_gsm8k(base_model: LanguageModel,
         wandb.summary.update(output)
 
     if interactive_prompt["general"]["eval-val"]:
-        # from eval import evaluate
-        # output = evaluate(dataset, "test")['submission_result']
 
-        # wandb.summary.update(output)
         from pathlib import Path
         with open(Path(path_to_webqa), 'r') as file:
             webqa_data = json.load(file)
-        
-        # def calculate_recall_f1(positive_ids, predicted_positive_ids):
-        #     TP = len(set(positive_ids) & set(predicted_positive_ids))
-        #     FN = len(set(positive_ids) - set(predicted_positive_ids))
-        #     FP = len(set(predicted_positive_ids) - set(positive_ids))
-
-        #     # Calculate precision and recall
-        #     precision = TP / (TP + FP) if TP + FP else 0
-        #     recall = TP / (TP + FN) if TP + FN else 0
-
-        #     # Calculate F1 score
-        #     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
-
-        #     return recall, f1_score
-
-        # for key in tqdm(dataset, total=len(dataset),
-        #                              desc='Eval Retrieval', disable=disable_tqdm):
-            
-        #     sample = webqa_data[key]
-
-        #     pos_facts = [
-        #         image_id['image_id'] for image_id in sample["img_posFacts"]
-        #     ]
-        #     pos_facts += [
-        #         snippet_id['snippet_id'] for snippet_id in sample["txt_posFacts"]
-        #     ]
-
-        #     predicted_sources = dataset[key]['sources']
-            
-        #     print(f"predicted_sources: {predicted_sources}")
-        #     print(f"pos_facts: {pos_facts}")
-
-        #     recall, f1_score = calculate_recall_f1(pos_facts, predicted_sources)
-        #     print(f"Recall: {recall}, F1 Score: {f1_score}")
-
-        #     wandb.summary.update({"Retrieval":f1_score})
-
-        #     with open(os.path.join(log_dir, f'run_id.txt'), 'w') as file:
-        #         file.write(wandb.run.id)
-
-            #### SERVER EVAL
 
         url = "http://127.0.0.1:8000/evaluate"
-
-        #file = json.loads(open("/home/stud/abinder/logs/webqa_MCTS/12162023-142428/webqa.json").read())
 
         data_to_send = {
             "data": dataset
@@ -477,12 +276,6 @@ def rap_gsm8k(base_model: LanguageModel,
         import requests
         # Send POST request
         response = requests.post(url, data=data_json)
-
-        # Check if the request was successful
-        # if response.status_code == 200:
-        #     print("Response from server:", response.json())
-        # else:
-        #     print(f"Failed to get response, status code: {response.status_code}")
 
         #print(response.json())
         payload = response.json()
@@ -535,13 +328,6 @@ if __name__ == '__main__':
              seed : int = None,
              **kwargs):
         with open(interactive_prompt) as f:
-
-            # artifact = wandb.Artifact('my_artifact', type='config')
-            # artifact.add_file(interactive_prompt)
-
-            # # Log the artifact
-            # wandb.log_artifact(artifact)
-
             interactive_prompt = json.load(f)
 
             
@@ -625,7 +411,7 @@ if __name__ == '__main__':
         else:
             assert False, f'cannot resolve {base_lm=}'
 
-        rap_gsm8k(base_model=base_model,
+        rap_webqa(base_model=base_model,
                   interactive_prompt=interactive_prompt,
                   useful_prompt=useful_prompt,
                   batch_size=batch_size,
