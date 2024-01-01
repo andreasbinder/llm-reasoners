@@ -64,18 +64,60 @@ class GSM8kConfig(SearchConfig):
             #                                  self.example)[1]
             self.overall_question = self.example
 
+    def action_selection(self, state: GSM8kState) -> DecomposeResult:
+
+        question = self.example["Q"]
+
+        model_input = utils.action_selection_prompt(self.prompt, question, state)
+
+
+        available_actions = self.prompt["action_selection"]["available_actions"]
+
+        at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
+        n_actions = 1 if at_depth_limit else self.n_actions
+        temperature = 0.0001 if at_depth_limit else self.temperature #TODO
+        selected_actions = []
+
+        for idx in range(0, n_actions, self.batch_size):
+            n_samples = min(n_actions - idx, self.batch_size)
+            
+            for i in range(self.max_attempts):
+                
+                selected_action = self.base_model.generate([model_input] * n_samples,
+                                                hide_input=True,
+                                                do_sample=True,
+                                                temperature=temperature,
+                                                max_new_tokens=self.generation_cutoff,
+                                                min_new_tokens=self.min_new_tokens,
+                                                eos_token_id='\n').text[0]
+
+                print(f"Complete Selected Action: '{selected_action}'")                                                
+                keyword = utils.find_first_appearance(selected_action, available_actions) 
+                if keyword is None:
+                    temperature = self.temperature
+                    print(f"Output '{selected_action}' not a valid action. Retrying...")
+                    continue  # This skips the rest of the code in the loop and starts the next iteration
+
+                # Process the valid output
+                print(f"Valid action received: {keyword}")
+                # ... your code to handle the valid output ...
+                selected_actions += [keyword]
+                break  # Break the loop if a valid action is found
+            else:
+                print("No valid action was found after maximum attempts.")
+                selected_actions += ["INVALID"]
+
+        #keywords = ["HYPOTHESIS"] * 4
+        return selected_actions
+
     def get_actions(self, state: GSM8kState, ) -> list[WebQAAction]:
 
         question = self.example["Q"]
 
         model_input = utils.action_selection_prompt(self.prompt, question, state)
 
-        #model_input = action_selection()
-        # print("#" * 25 + "Action Selection Input" + "#" * 25)
-        # print(model_input)
 
-        #available_actions = list(self.prompt["actions"].keys())
-        available_actions = ["ANSWER", "RETRIEVE"]
+        available_actions = self.prompt["action_selection"]["available_actions"]
 
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
@@ -126,7 +168,11 @@ class GSM8kConfig(SearchConfig):
                 print("No valid action was found after maximum attempts.")
                 selected_actions += ["INVALID"]
 
+        #keywords = ["HYPOTHESIS"] * 4
         keywords = selected_actions
+
+        #keywords = self.action_selection(state)
+
         
         print("#" * 25 + "Action Selection" + "#" * 25)
         for item1, item2 in zip([model_input] * n_actions, keywords):            
@@ -159,8 +205,11 @@ class GSM8kConfig(SearchConfig):
                                                     min_new_tokens=self.min_new_tokens,
                                                     eos_token_id='\n').text
                 
+                
                 # actions += [keyword + ': ' + model_output[0]]
-                actions += [(keyword, model_output[0])]
+                
+                #actions += [(keyword, model_output[0])]
+                actions += [(keyword, model_output[0].strip())]
                 
             # wandb.log({
             #     str(len(state)): {

@@ -128,6 +128,7 @@ def format_context(state):
     #snippets = [snippet for state in state_list for snippet in state.retrieved_snippets]
     state_functions = {
         'RETRIEVE': lambda state: "\n".join(f"- {sentence}" for sentence in state.retrieved_snippets),
+        'HYPOTHESIS': lambda state: "- Proposition: " + state.proposition + " -> " + "Comment: " + state.comment[0],
         # ... other states
     }
 
@@ -205,7 +206,7 @@ def action_selection_prompt(config, question, state):
 def action_prompt(config, question, state, action):
     
     prompts = config["actions"][action]["prompts"]
-    available_actions = config["action_selection"]["available_actions"]
+    
 
     if state == []:
         prompt = prompts["base"]
@@ -281,6 +282,10 @@ def evaluation_prompt(config, prompt, question, state, action):
         chosen_action = chosen_action.format(
             query=details
         )
+    if keyword == "HYPOTHESIS":
+        chosen_action = chosen_action.format(
+            hypothesis=details
+        )
 
     if state == []:
         prompt = prompts["base"]
@@ -327,38 +332,61 @@ def answer_prompt(prompt, example, state, action):
         model_input = g.getvalue()
     return model_input      
 
-def hypothesis_prompt(prompt, example, state, action, details):
+def hypothesis_prompt(config, question, state, action, details):
+    prompts = config["actions"][action]["prompts"]
 
-    action = "HYPOTHESIS"
-    with io.StringIO() as g:
-        g.write(prompt["actions"][action]["description"] + "\n") 
+    # prompt = "You are presented with a proposed conclusion to an overall question and a reasoning path to it.\nThe overall question is: {overall_question}\nThe proposed conclusion is: {details}\nIs the proposed conclusion correct?\nExplain your decision."
+    # prompt = "You are presented with a proposed conclusion to an overall question and a reasoning path to it.\nThe overall question is: {overall_question}\nThis is the available context:\n{context}\nThe proposed conclusion is: {details}\nIs the proposed conclusion correct?\nExplain your decision."
 
-        # give overall question
-        g.write(prompt["general"]["prefix_main"] + example + "\n") 
+    if state == []:
+        
+        prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThe proposed conclusion is: {details}\nYour comment is: "
+        prompt = prompt.format(
+            overall_question=question,
+            details=details
+        )
+    else:
+        prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThis is the available context:\n{context}\nThe proposed conclusion is: {details}\nYour comment is: "
+        prompt = prompt.format(
+            overall_question=question,
+            context=format_context(state),
+            details=details
+        )
+        
+    return prompt
 
-        # write history
-        # only write if history exists
-        if state != []:
-            g.write(prompt["actions"][action]["history"] + "\n") 
-            for idx, a in enumerate(prompt["actions"]):
-                # do not print action with no history
-                if any(s.state_type == a for s in state):
-                    #g.write(a + ": " + "\n")
-                    # for idx, s in enumerate(state):
-                    #     if a == s.state_type:
-                    #         #g.write(s[0] + " "+ s[1] + "\n")
-                    #         g.write(get_history(s, a) + "\n")
-                    g.write(get_history(state, a)) # TODO 
+# def hypothesis_prompt(prompt, example, state, action, details):
 
-        # suggested answer
-        g.write(prompt["actions"][action]["suggestion"] + details + "\n") 
+#     action = "HYPOTHESIS"
+#     with io.StringIO() as g:
+#         g.write(prompt["actions"][action]["description"] + "\n") 
 
-        # output format
-        g.write(prompt["actions"][action]["output_format"] + "\n") 
-        # g.write("Parent Question: " + example + "\n")
-        # g.write("Child Question: ")
-        model_input = g.getvalue()
-    return model_input      
+#         # give overall question
+#         g.write(prompt["general"]["prefix_main"] + example + "\n") 
+
+#         # write history
+#         # only write if history exists
+#         if state != []:
+#             g.write(prompt["actions"][action]["history"] + "\n") 
+#             for idx, a in enumerate(prompt["actions"]):
+#                 # do not print action with no history
+#                 if any(s.state_type == a for s in state):
+#                     #g.write(a + ": " + "\n")
+#                     # for idx, s in enumerate(state):
+#                     #     if a == s.state_type:
+#                     #         #g.write(s[0] + " "+ s[1] + "\n")
+#                     #         g.write(get_history(s, a) + "\n")
+#                     g.write(get_history(state, a)) # TODO 
+
+#         # suggested answer
+#         g.write(prompt["actions"][action]["suggestion"] + details + "\n") 
+
+#         # output format
+#         g.write(prompt["actions"][action]["output_format"] + "\n") 
+#         # g.write("Parent Question: " + example + "\n")
+#         # g.write("Child Question: ")
+#         model_input = g.getvalue()
+#     return model_input      
 
 
 def get_history(state_list, action):

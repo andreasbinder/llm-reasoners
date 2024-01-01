@@ -10,7 +10,7 @@ from datetime import datetime
 from reasoners import LanguageModel, Reasoner, SearchAlgorithm
 from reasoners.algorithm import MCTS, MCTSNode, MCTSAggregation
 
-from world_model import GSM8kWorldModel, GSM8kState, WebQAAction
+from world_model import WebQAWorldModel, GSM8kState, WebQAAction
 from search_config import GSM8kConfig
 import utils
 
@@ -108,7 +108,7 @@ def rap_webqa(base_model: LanguageModel,
 
     search_algo_params |= {'cum_reward': cum_reward, 'calc_q': calc_q, 'disable_tqdm': disable_tqdm,
                            'output_trace_in_each_iter': output_trace_in_each_iter}
-    world_model = GSM8kWorldModel(base_model=base_model, prompt=interactive_prompt,
+    world_model = WebQAWorldModel(base_model=base_model, prompt=interactive_prompt,
                                   n_confidence=n_confidence, batch_size=batch_size, temperature=temperature,
                                   early_stop_base=early_stop_base, early_stop_threshold=early_stop_threshold)
     config = GSM8kConfig(base_model=base_model, prompt=interactive_prompt, useful_prompt=useful_prompt,
