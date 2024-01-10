@@ -139,10 +139,10 @@ def format_context(state):
         #out += f"{idx}) {c}" + "\n"
     return out
 
-def action_selection_prompt(config, question, state):
+def action_selection_prompt(config, question, state, available_actions):
 
     prompts = config["action_selection"]["prompts"]
-    available_actions = config["action_selection"]["available_actions"]
+    #available_actions = config["action_selection"]["available_actions"]
 
     if state == []:
         prompt = prompts["base"]
@@ -332,21 +332,41 @@ def answer_prompt(prompt, example, state, action):
         model_input = g.getvalue()
     return model_input      
 
+def state_transition_prompt(config, question, state, action, details):
+    prompts = config["actions"][action]["prompts"]["state_transition"]
+
+    if state == []:
+        
+        prompt = prompts["base"]
+        prompt = prompt.format(
+            overall_question=question,
+            details=details
+        )
+    else:
+        prompt = prompts["subsequent"]
+        prompt = prompt.format(
+            overall_question=question,
+            context=format_context(state),
+            details=details
+        )
+        
+    return prompt
+
 def hypothesis_prompt(config, question, state, action, details):
-    prompts = config["actions"][action]["prompts"]
+    prompts = config["actions"][action]["prompts"]["state_transition"]
 
     # prompt = "You are presented with a proposed conclusion to an overall question and a reasoning path to it.\nThe overall question is: {overall_question}\nThe proposed conclusion is: {details}\nIs the proposed conclusion correct?\nExplain your decision."
     # prompt = "You are presented with a proposed conclusion to an overall question and a reasoning path to it.\nThe overall question is: {overall_question}\nThis is the available context:\n{context}\nThe proposed conclusion is: {details}\nIs the proposed conclusion correct?\nExplain your decision."
 
     if state == []:
         
-        prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThe proposed conclusion is: {details}\nYour comment is: "
+        #prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThe proposed conclusion is: {details}\nYour comment is: "
         prompt = prompt.format(
             overall_question=question,
             details=details
         )
     else:
-        prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThis is the available context:\n{context}\nThe proposed conclusion is: {details}\nYour comment is: "
+        #prompt = "You are presented with a proposed conclusion to an overall question. Is the proposed conclusion correct? Output 'Yes' or 'No', and a reason.\nThe overall question is: {overall_question}\nThis is the available context:\n{context}\nThe proposed conclusion is: {details}\nYour comment is: "
         prompt = prompt.format(
             overall_question=question,
             context=format_context(state),
