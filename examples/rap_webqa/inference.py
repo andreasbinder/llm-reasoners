@@ -135,18 +135,22 @@ def rap_webqa(base_model: LanguageModel,
     #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
     #embedding_model = CLIP("laion/CLIP-ViT-H-14-laion2B-s32B-b79K", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 
-    from models.llava_model import LLAVAModel
-    #model_path = "liuhaotian/llava-v1.5-13b"
-    #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
-    
-    # model_path = "liuhaotian/llava-v1.5-7b"
-    # model_base = None
-    # load_8bit = True
+    if retrieve_hyparams['use_caption_model']:
 
-    model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
-    model_base = retrieve_hyparams["caption_model"].get("model_base", None)
-    load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
-    caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+        from models.llava_model import LLAVAModel
+        #model_path = "liuhaotian/llava-v1.5-13b"
+        #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
+        
+        # model_path = "liuhaotian/llava-v1.5-7b"
+        # model_base = None
+        # load_8bit = True
+
+        model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
+        model_base = retrieve_hyparams["caption_model"].get("model_base", None)
+        load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
+        caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+    else:
+        caption_model = None
 
     # from models.llava_model_hf import LLAVAModel
     # caption_model = LLAVAModel()
@@ -156,34 +160,34 @@ def rap_webqa(base_model: LanguageModel,
     log_hyparams_with_path(interactive_prompt)
 
 
-    def footprint(base_model, caption_model):
-        print("#" * 25 + "Footprint" + "#" * 25)
-        # Footprints
-        # Base Model
-        print("Base Model Footprint")
-        try:
-            base_model_footprint = base_model.model.get_memory_footprint() / 1024 / 1024 / 1024
-            print(base_model_footprint)
-        except:
-            print("No base model footprint")
+    # def footprint(base_model, caption_model):
+    #     print("#" * 25 + "Footprint" + "#" * 25)
+    #     # Footprints
+    #     # Base Model
+    #     print("Base Model Footprint")
+    #     try:
+    #         base_model_footprint = base_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+    #         print(base_model_footprint)
+    #     except:
+    #         print("No base model footprint")
             
-        print("Caption Model Footprint")
-        try:
-            caption_model_footprint = caption_model.model.get_memory_footprint() / 1024 / 1024 / 1024
-            print(caption_model_footprint)
-        except:
-            print("No caption_model footprint")
+    #     print("Caption Model Footprint")
+    #     try:
+    #         caption_model_footprint = caption_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+    #         print(caption_model_footprint)
+    #     except:
+    #         print("No caption_model footprint")
 
-        try:
-            print("Allocated Memory")
-            import torch
-            print(torch.cuda.memory_allocated())
-            print(torch.cuda.max_memory_allocated())
-        except:
-            pass
+    #     try:
+    #         print("Allocated Memory")
+    #         import torch
+    #         print(torch.cuda.memory_allocated())
+    #         print(torch.cuda.max_memory_allocated())
+    #     except:
+    #         pass
         
-        print("#" * 25 + "" + "#" * 25)
-    footprint(base_model, caption_model)
+    #     print("#" * 25 + "" + "#" * 25)
+    # footprint(base_model, caption_model)
 
     if len(dataset) < 3:
         print("dataset: ", dataset)

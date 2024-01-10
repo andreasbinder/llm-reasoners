@@ -60,7 +60,7 @@ class Answer():
         question (str): The question for which the answer is generated.
     """
 
-    def __init__(self, base_model, temperature, example) -> None:
+    def __init__(self, base_model, temperature, example, hyparams) -> None:
         """
         Constructs all the necessary attributes for the AnswerGenerator object.
         
@@ -73,6 +73,9 @@ class Answer():
         self.base_model = base_model
         self.temperature = temperature
         self.question = example['Q']
+        self.hyparams = hyparams
+        self.min_new_tokens = hyparams["min_new_tokens"]
+        self.max_new_tokens = hyparams["max_new_tokens"]
 
     def answer(self, prompt, state: str) -> str:
         """
@@ -97,8 +100,8 @@ class Answer():
                                             hide_input=True,
                                             do_sample=True,
                                             temperature=self.temperature,
-                                            min_new_tokens=3,
-                                            max_new_tokens=80,
+                                            min_new_tokens=self.min_new_tokens,
+                                            max_new_tokens=self.max_new_tokens,
                                             eos_token_id='\n').text
         
         answer = [a.strip() for a in answer]
@@ -177,20 +180,26 @@ class Toolbox():
         self.example = world_model.example
         self.prompt = world_model.prompt
 
-        self.retrieval = Retrieval(
-            example = self.example,
-            hyparams = self.prompt["actions"]["RETRIEVE"]["hyparams"]
-        )
-        self.answer = Answer(
-            base_model=self.world_model.base_model,
-            temperature=self.world_model.temperature,
-            example = self.example
-        )
-        self.hypothesize = Hypothesis(
-            base_model=self.world_model.base_model,
-            temperature=self.world_model.temperature,
-            example = self.example
-        )
+        if "RETRIEVE" in self.prompt["action_selection"]["available_actions"]:
+            self.retrieval = Retrieval(
+                example = self.example,
+                hyparams = self.prompt["actions"]["RETRIEVE"]["hyparams"]
+            )
+
+        if "ANSWER" in self.prompt["action_selection"]["available_actions"]:    
+            self.answer = Answer(
+                base_model=self.world_model.base_model,
+                temperature=self.world_model.temperature,
+                example = self.example,
+                hyparams = self.prompt["actions"]["ANSWER"]["hyparams"]
+            )
+
+        if "HYPOTHESIS" in self.prompt["action_selection"]["available_actions"]:        
+            self.hypothesize = Hypothesis(
+                base_model=self.world_model.base_model,
+                temperature=self.world_model.temperature,
+                example = self.example
+            )
         self.keywords = ['ANSWER', 'DECOMPOSE', 'RETRIEVE', 'INVALID', 'HYPOTHESIS']
 
     def execute_tool(self, prompt, example, state, action: str) -> str:
