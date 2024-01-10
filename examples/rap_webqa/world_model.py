@@ -100,6 +100,8 @@ class Answer():
                                             min_new_tokens=3,
                                             max_new_tokens=80,
                                             eos_token_id='\n').text
+        
+        answer = [a.strip() for a in answer]
         print("#" * 25 + "ANSWER Output" + "#" * 25)
         print(answer)
 
@@ -143,7 +145,8 @@ class Hypothesis():
             AnswerResult: An object containing the action, question, generated answer, and confidence level.
         """
         
-        model_input = utils.hypothesis_prompt(prompt, self.question, state, "HYPOTHESIS", details)
+        #model_input = utils.hypothesis_prompt(prompt, self.question, state, "HYPOTHESIS", details)
+        model_input = utils.state_transition_prompt(prompt, self.question, state, "HYPOTHESIS", details)
         print("#" * 25 + "HYPOTHESIS Input" + "#" * 25)
         print(model_input)
 
