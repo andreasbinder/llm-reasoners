@@ -11,6 +11,35 @@ import utils
 
 import wandb
 
+import time
+
+def time_decorator(func):
+    total_time = 0
+    call_count = 0
+    results = []
+
+    def wrapper(*args, **kwargs):
+        nonlocal total_time, call_count
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+
+        call_count += 1
+        total_time += (end_time - start_time)
+        avg_time = total_time / call_count
+
+        results.append(result)
+
+        print(f"{func.__name__} executed in {(end_time - start_time):.4f} seconds, running average: {avg_time:.4f} seconds")
+
+        return result
+
+    wrapper.results = results
+    wrapper.avg_time = lambda: total_time / call_count if call_count else float('inf')
+
+    return wrapper
+
+
 class GSM8kUsefulPrompt(TypedDict):
     input: str
     question_prefix: str
@@ -64,14 +93,17 @@ class GSM8kConfig(SearchConfig):
             #                                  self.example)[1]
             self.overall_question = self.example
 
+    @time_decorator
     def action_selection(self, state: GSM8kState) -> DecomposeResult:
 
         question = self.example["Q"]
 
-        model_input = utils.action_selection_prompt(self.prompt, question, state)
-
-
         available_actions = self.prompt["action_selection"]["available_actions"]
+
+        model_input = utils.action_selection_prompt(self.prompt, question, state, available_actions)
+
+
+        
 
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
@@ -83,6 +115,8 @@ class GSM8kConfig(SearchConfig):
             
             for i in range(self.max_attempts):
                 
+                #logits = self.base_model.get_next_token_logits(model_input, ["ANSWER", "Answer", "RETRIEVE", "Retrieve"])[0]
+
                 selected_action = self.base_model.generate([model_input] * n_samples,
                                                 hide_input=True,
                                                 do_sample=True,
@@ -100,6 +134,7 @@ class GSM8kConfig(SearchConfig):
 
                 # Process the valid output
                 print(f"Valid action received: {keyword}")
+                #print(f"Logits: {logits}")
                 # ... your code to handle the valid output ...
                 selected_actions += [keyword]
                 break  # Break the loop if a valid action is found
@@ -110,14 +145,65 @@ class GSM8kConfig(SearchConfig):
         #keywords = ["HYPOTHESIS"] * 4
         return selected_actions
 
+        
+    
+    # @time_decorator
+    # def action_selection(self, state: GSM8kState) -> DecomposeResult:
+
+
+    #     question = self.example["Q"]
+
+    #     available_actions = self.prompt["action_selection"]["available_actions"]
+
+    #     model_input = utils.action_selection_prompt(self.prompt, question, state, available_actions)
+
+
+        
+
+    #     at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
+    #     n_actions = 1 if at_depth_limit else self.n_actions
+    #     temperature = 0.0001 if at_depth_limit else self.temperature #TODO
+    #     selected_actions = []
+
+    #     n_samples = n_actions #min(n_actions, self.batch_size)
+                
+    #     logits = self.base_model.get_next_token_logits(model_input, ["ANSWER", "Answer", "RETRIEVE", "Retrieve"])[0]
+    #     print(f"Logits: {logits}")
+
+    #     selected_actions = self.base_model.generate([model_input] * n_samples,
+    #                                     hide_input=True,
+    #                                     do_sample=True,
+    #                                     temperature=temperature,
+    #                                     max_new_tokens=self.generation_cutoff,
+    #                                     min_new_tokens=self.min_new_tokens,
+    #                                     eos_token_id='\n').text
+    #     keywords = []
+    #     for selected_action in selected_actions:
+                
+    #         print(f"Complete Selected Action: '{selected_action}'")                                                
+    #         keyword = utils.find_first_appearance(selected_action, available_actions) 
+    #         if keyword is None:
+    #             keywords += ["INVALID"]
+    #             print(f"Output '{selected_action}' not a valid action. Retrying...")
+    #         else:
+
+    #             # Process the valid output
+    #             print(f"Valid action received: {keyword}")
+                
+    #             # ... your code to handle the valid output ...
+    #             keywords += [keyword]
+
+    #     return keywords
+
+
     def get_actions(self, state: GSM8kState, ) -> list[WebQAAction]:
 
         question = self.example["Q"]
 
-        model_input = utils.action_selection_prompt(self.prompt, question, state)
-
-
         available_actions = self.prompt["action_selection"]["available_actions"]
+
+        model_input = utils.action_selection_prompt(self.prompt, question, state, available_actions)
+
 
         at_depth_limit = self.force_terminating_on_depth_limit and len(state) + 1 >= self.depth_limit
         n_actions = 1 if at_depth_limit else self.n_actions
@@ -168,10 +254,10 @@ class GSM8kConfig(SearchConfig):
                 print("No valid action was found after maximum attempts.")
                 selected_actions += ["INVALID"]
 
-        #keywords = ["HYPOTHESIS"] * 4
+        # keywords = ["HYPOTHESIS"] * 4
         keywords = selected_actions
 
-        #keywords = self.action_selection(state)
+        # keywords = self.action_selection(state)
 
         
         print("#" * 25 + "Action Selection" + "#" * 25)
@@ -275,3 +361,5 @@ class GSM8kConfig(SearchConfig):
         assert r_useful is not None, "useful_reward is required to calculate reward in this search config, consider passing it in fast_reward"
         assert confidence is not None, "confidence is required to calculate reward in this search config, consider passing it in world model's step"
         return self.calculate_reward(r_useful, confidence)
+
+
