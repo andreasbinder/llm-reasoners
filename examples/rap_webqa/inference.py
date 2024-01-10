@@ -189,6 +189,7 @@ def rap_webqa(base_model: LanguageModel,
         print("dataset: ", dataset)
 
     
+    all_actions = []
     for key in tqdm(dataset, total=len(dataset),
                                      desc='WebQA', disable=disable_tqdm):
         
@@ -216,7 +217,19 @@ def rap_webqa(base_model: LanguageModel,
 
         answer = algo_output.terminal_state[-1].main_answer
         A = example["A"]
+
+        all_actions.extend(
+            winning_state.state_type for winning_state in algo_output.terminal_state
+        )
         
+        # print("#" * 25 + "Terminal State Start" + "#" * 25)
+        # print(algo_output.terminal_state)
+        # print("#" * 25 + "Terminal State End" + "#" * 25)
+
+        # print("#" * 25 + "Trace State Start" + "#" * 25)
+        # print(algo_output.trace)
+        # print("#" * 25 + "trace State End" + "#" * 25)
+
         print(f'Prediction: {answer}')
         print(f'Answer: {A}')
         log_str = f'Guid: {example["Guid"]} Prediction: {answer} Ground-truth: {A}'
@@ -250,6 +263,23 @@ def rap_webqa(base_model: LanguageModel,
     #with open(os.path.join(log_dir, f'{time_prefix}-webqa.json'), 'w') as json_file:
     with open(os.path.join(log_dir, f'webqa.json'), 'w') as json_file:
         json.dump(dataset, json_file, indent=4)
+
+
+    from collections import Counter, defaultdict
+
+    count_all_actions = Counter(all_actions)
+
+    avg_all_actions = {
+        count_all_actions[key] / len(dataset) for key in count_all_actions
+    }
+
+    wandb.summary.update({
+        "Action Count": count_all_actions,
+        "Action Average": avg_all_actions,
+    })
+
+    # function = config.action_selection
+    # print("Average time:", function.avg_time())
 
     # TODO local eval
     #if split == "test":
