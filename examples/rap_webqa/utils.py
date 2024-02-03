@@ -1,7 +1,116 @@
 import re
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import io
+import base64
+from PIL import Image
+from io import BytesIO
+
+class Evaluation():
+    def __init__(self) -> None:
+        self.modality_type_counter = {
+            "txt": 0,
+            "img": 0,
+        }
+        self.n_samples = 0
+        
+
+    def __call__(self, algo_output, *args: Any, **kwds: Any) -> Any:
+        # predicted_sources = [
+        #     source
+        #     for winning_state in algo_output.terminal_state if winning_state.state_type == "RETRIEVE"
+        #     for source in winning_state.retrieved_sources
+        # ]
+        self.update_modality(algo_output)
+        self.n_samples += 1
+
+
+    def update(self, *args: Any, **kwds: Any) -> Any:
+        pass
+
+    def update_modality(self, algo_output, *args: Any, **kwds: Any) -> Any:
+        for winning_state in algo_output.terminal_state: 
+            if winning_state.state_type == "RETRIEVE":
+                for source in winning_state.retrieved_sources:
+                    if type(source) == str:
+                        self.modality_type_counter["txt"] += 1
+                    elif type(source) == int:
+                        self.modality_type_counter["img"] += 1
+                    else:
+                        #raise ValueError(f"Unknown modality type: {source['modality']}")
+                        print(f"Unknown modality type: {source}")
+
+    def get_modality(self):
+        return {
+            "txt": self.modality_type_counter["txt"] / self.n_samples,
+            "img": self.modality_type_counter["img"] / self.n_samples,
+        }
+
+
+def calculate_recall_f1(positive_ids, predicted_positive_ids):
+    TP = len(set(positive_ids) & set(predicted_positive_ids))
+    FN = len(set(positive_ids) - set(predicted_positive_ids))
+    FP = len(set(predicted_positive_ids) - set(positive_ids))
+
+    # Calculate precision and recall
+    precision = TP / (TP + FP) if TP + FP else 0
+    recall = TP / (TP + FN) if TP + FN else 0
+
+    # Calculate F1 score
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) else 0
+
+    return recall, f1_score
+
+def get_retrieve_metrics(positive_ids, predicted_positive_ids):
+    pass
+
+
+
+# Function to load line indices
+def load_line_indices(file_path):
+    with open(file_path, "r") as fp_lineidx:
+        return [int(i.strip()) for i in fp_lineidx.readlines()]
+
+
+# Usage Example
+# from utils.webqa_helpers import load_line_indices, batch_image_id_to_images
+# lineidx = load_line_indices("/nfs/data2/zhangya/webqa/imgs.lineidx")
+# image_batch = batch_image_id_to_images([30016255, 30112308, 30103103, 30276954], lineidx, "/nfs/data2/zhangya/webqa/imgs.tsv")
+# Function to convert a batch of image IDs to actual images
+def batch_image_id_to_images(image_ids, lineidx, file_path, raw=False):
+    """
+    Convert a batch of image IDs to actual images.
+
+    Args:
+    image_ids (list of int): The IDs of the images.
+    lineidx (list): List of line indices for image file pointers.
+    file_path (str): Path to the image file.
+
+    Returns:
+    list of Image: The images corresponding to the given image IDs.
+    """
+    images = []
+    try:
+        with open(file_path, "r") as fp:
+            for image_id in image_ids:
+                fp.seek(lineidx[int(image_id) % 10000000])
+                _, img_base64 = fp.readline().strip().split('\t')
+                #image = Image.open(BytesIO(base64.b64decode(img_base64)))
+                if raw:
+                    image = base64.b64decode(img_base64).convert("RGB")
+                else:
+                    image = Image.open(BytesIO(base64.b64decode(img_base64))).convert("RGB")
+                    
+                images.append(image)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    return images
+
+
+def fetch_images_by_id(image_ids, lineidx_file, tsv_file, raw=False):
+    lineidx = load_line_indices(lineidx_file)
+    return batch_image_id_to_images(image_ids, lineidx, tsv_file, raw)
+
 
 # TODO suggested improvements
 # Python
@@ -122,21 +231,80 @@ def format_actions(config, actions):
         out += a + ": " + config["actions"][a]["description"] + "\n"
     return out
 
+# def contains_refine_result(state_list):
+#     return any(isinstance(s, RefineResult) for s in state_list)
+def contains_refine_result(state_list):
+    return any(s.state_type == "REFINE" for s in state_list)
+
+
+
+# Example usage:
+# state_list = [ ... ] # your list of states
+# if contains_refine_result(state_list):
+#     print("The state list contains a RefineResult.")
+# else:
+#     print("No RefineResult found in the state list.")
+
+def modify_and_copy_state(state, refine):
+    new_state = []
+
+    for s in state:
+        # Convert NamedTuple to a dictionary
+        s_dict = s._asdict()
+
+        if s.state_type in ["RETRIEVE", "ASPECT"]:
+            # Modify the dictionary
+            s_dict['is_filtered'] = [True] * len(s.retrieved_snippets)
+
+        # Reconstruct the NamedTuple with the modified dictionary
+        new_s = type(s)(**s_dict)
+        new_state.append(new_s)
+
+    if refine:
+        for state_index, snippet_index in zip(refine.state_indices, refine.snippet_indices):
+            # Modify the specific snippets based on refine results
+            state_item = new_state[state_index]
+            state_item_dict = state_item._asdict()
+            state_item_dict['is_filtered'][snippet_index] = False
+            new_state[state_index] = type(state_item)(**state_item_dict)
+
+    return new_state
+
 
 def format_context(state):
 
+    # if contains_refine_result(state):
+    #     refine = [s for s in state if s.state_type == "REFINE"][0]
+
+    # if contains_refine_result(state):
+    #     # Initially mark all snippets as filtered
+    #     for s in state:
+    #         if s.state_type == "RETRIEVE" or s.state_type == "ASPECT":
+    #             s.is_filtered = [True] * len(s.retrieved_snippets)
+
+    #     refine = next((s for s in state if s.state_type == "REFINE"), None)
+    #     if refine:
+    #         for state_index, snippet_index in zip(refine.state_indices, refine.snippets):
+    #             state[state_index].is_filtered[snippet_index] = False
+
+    if contains_refine_result(state):
+        refine = next((s for s in state if s.state_type == "REFINE"), None)
+        state = modify_and_copy_state(state, refine)
+
+
     #snippets = [snippet for state in state_list for snippet in state.retrieved_snippets]
     state_functions = {
-        'RETRIEVE': lambda state: "\n".join(f"- {sentence}" for sentence in state.retrieved_snippets),
+        'RETRIEVE': lambda state: "\n".join(f"- {sentence}" for index, sentence in enumerate(state.retrieved_snippets) if state.is_filtered[index] == False),
         'HYPOTHESIS': lambda state: "- Proposition: " + state.proposition + " -> " + "Comment: " + state.comment[0],
-        # ... other states
+        'ASPECT': lambda state: "\n".join(f"- {sentence}" for index, sentence in enumerate(state.retrieved_snippets) if state.is_filtered[index] == False),
     }
 
 
     out = ""
     for idx, s in enumerate(state):
-        out += f"{state_functions[s.state_type](s) }" + "\n"
-        #out += f"{idx}) {c}" + "\n"
+        if s.state_type in state_functions:
+            out += f"{state_functions[s.state_type](s) }" + "\n"
+        
     return out
 
 def action_selection_prompt(config, question, state, available_actions):
@@ -269,7 +437,7 @@ def action_prompt(config, question, state, action):
 #         model_input = g.getvalue()
 #     return model_input
 
-def evaluation_prompt(config, prompt, question, state, action):
+def evaluation_prompt(config, question, state, action):
     
     keyword, details = action
 
@@ -282,10 +450,19 @@ def evaluation_prompt(config, prompt, question, state, action):
         chosen_action = chosen_action.format(
             query=details
         )
+    if keyword == "QUERY":
+        chosen_action = chosen_action.format(
+            query=details
+        )
     if keyword == "HYPOTHESIS":
         chosen_action = chosen_action.format(
             hypothesis=details
         )
+    if keyword == "ASPECT":
+        chosen_action = chosen_action.format(
+            query=details
+        )
+    
 
     if state == []:
         prompt = prompts["base"]
