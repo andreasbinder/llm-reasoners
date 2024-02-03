@@ -11,6 +11,8 @@ import base64
 from PIL import Image
 from io import BytesIO
 
+from sentence_transformers.cross_encoder import CrossEncoder
+
 # Function to load line indices
 def load_line_indices(file_path):
     with open(file_path, "r") as fp_lineidx:
@@ -82,6 +84,10 @@ class RetrievalBase():
 
         self.caption_model_prompt = hyparams['caption_model'].get('prompt', '{query}')
         self.caption_model_max_new_tokens = hyparams['caption_model'].get('max_new_tokens', 512)
+        self.caption_model_filter_token = hyparams['caption_model'].get('filter_token', 'IGNORE')
+
+        # 
+        self.use_captions = hyparams.get('use_captions', False)
 
         # Initialize embeddings and source material dictionaries
         self.embeddings = {}
@@ -209,14 +215,24 @@ class RetrievalBase():
             retrieved_sources=retrieved_data['sources'],
             modalities=retrieved_data['modalities'],
             relevance_scores=retrieved_data['scores'],
-            is_gold=retrieved_data['is_gold']
+            is_gold=retrieved_data['is_gold'],
+            is_filtered=retrieved_data['is_filtered']
         )
         return result
 
 
-    def get_caption_model_prompt(self, query):
-        overall_question = self.example['Q']
-        return self.caption_model_prompt.format(query=query, overall_question=overall_question)
+    # def get_caption_model_prompt(self, query):
+    #     overall_question = self.example['Q']
+    #     return self.caption_model_prompt.format(query=query, overall_question=overall_question)
+
+    def get_caption_model_prompt(self, query, caption):
+        
+        return self.caption_model_prompt.format(
+            query=query, 
+            caption=caption,
+            filter_token=self.caption_model_filter_token,
+            overall_question=self.example['Q']
+            )
     
     def sanitize_vlm_output(self, output):
         return output.replace('\n', '').strip()
@@ -227,6 +243,7 @@ class RetrievalBase():
         modalities = []
         scores = []
         is_gold = []
+        is_filtered = []
 
         for result in search_results:
             id = list(self.source_material.keys())[result['corpus_id']]
@@ -244,15 +261,34 @@ class RetrievalBase():
                     self.tsv_file
                     )
                 # Generate a caption for the image based on the query
-                caption_model_prompt = self.get_caption_model_prompt(query)
+
+                
+
+
+                original_caption = source_data['caption']
+                caption_model_prompt = self.get_caption_model_prompt(query, original_caption)
+
+                print("#" * 25 + "Start" + str(id) + "#" * 25)
+                print
+                print(caption_model_prompt)
+                print("#" * 25 )
 
                 caption = self.generate_image_caption(caption_model_prompt, image)
                 caption = self.sanitize_vlm_output(caption)
                 #caption = self.generate_image_caption(query, image)
+                print(caption)
+                print("#" * 25 )
+
                 content = caption
 
-                if content == 'NONE':
-                    continue
+                #if content == 'NONE':
+                if self.caption_model_filter_token in content:
+                    is_filtered.append(True)
+                else:
+                    is_filtered.append(False)
+            
+            else:
+                is_filtered.append(False)
 
             sources.append(id)
             scores.append(result['score'])
@@ -260,7 +296,7 @@ class RetrievalBase():
             modalities.append(content_type)
             is_gold.append(source_data['is_gold'])
 
-        return {'snippets': snippets, 'sources': sources, 'modalities': modalities, 'scores': scores, 'is_gold': is_gold}
+        return {'snippets': snippets, 'sources': sources, 'modalities': modalities, 'scores': scores, 'is_gold': is_gold, "is_filtered": is_filtered}
 
     def process_batch_search_results(self, search_results, query):
         # Separate containers for text and image results
@@ -350,24 +386,28 @@ class ClipRetrieval(RetrievalBase):
 
     def load_image_data(self):
         # Fetch and index positive image facts
-        pos_image_ids = [item['image_id'] for item in self.db.get('img_posFacts', [])]
+        pos_image_ids, captions = zip(**[(item['image_id'], item['caption']) for item in self.db.get('img_posFacts', [])])
         pos_images = fetch_images_by_id(pos_image_ids, self.lineidx_file, self.tsv_file)
-        for image_id, image in zip(pos_image_ids, pos_images):
-            self.add_to_index(image_id, image_path=image, is_gold=True)
+        for image_id, image, caption in zip(pos_image_ids, pos_images, captions):
+            self.add_to_index(
+                image_id, 
+                image_path=image,
+                caption=caption,
+                is_gold=True)
 
         # Fetch and index negative image facts
-        neg_image_ids = [item['image_id'] for item in self.db.get('img_negFacts', [])]
+        neg_image_ids, captions = zip(**[(item['image_id'], item['caption']) for item in self.db.get('img_negFacts', [])])
         neg_images = fetch_images_by_id(neg_image_ids, self.lineidx_file, self.tsv_file)
-        for image_id, image in zip(neg_image_ids, neg_images):
-            self.add_to_index(image_id, image_path=image, is_gold=False)
+        for image_id, image, caption in zip(neg_image_ids, neg_images, captions):
+            self.add_to_index(image_id, image_path=image, caption=caption, is_gold=False)
 
         # Fetch and index negative image facts
-        neg_image_ids = [item['image_id'] for item in self.db.get('img_Facts', [])]
+        neg_image_ids, captions = zip([(item['image_id'], item['caption']) for item in self.db.get('img_Facts', [])])
         neg_images = fetch_images_by_id(neg_image_ids, self.lineidx_file, self.tsv_file)
-        for image_id, image in zip(neg_image_ids, neg_images):
-            self.add_to_index(image_id, image_path=image, is_gold=False)
+        for image_id, image, caption in zip(neg_image_ids, neg_images, captions):
+            self.add_to_index(image_id, image_path=image, caption=caption, is_gold=False)
 
-    def add_to_index(self, id, text=None, image_path=None, is_gold=False):
+    def add_to_index(self, id, text=None, image_path=None, is_gold=False, caption=None):
         if text:
             #text_emb = self.embed_text(text)
             text_emb = self.embedding_model.embed_text(text)
@@ -377,12 +417,13 @@ class ClipRetrieval(RetrievalBase):
             #image_emb = self.embed_image(image_path)
             image_emb = self.embedding_model.embed_image(image_path)
             self.embeddings[id] = {'type': 'image', 'embedding': image_emb}
-            self.source_material[id] = {'type': 'image', 'content': image_path, 'is_gold': is_gold}
+            self.source_material[id] = {'type': 'image', 'content': image_path, 'is_gold': is_gold, 'caption': caption}
 
 class MPNetRetrieval(RetrievalBase):
     def __init__(self, example, hyparams):
         #super().__init__() # TODO think if parent necessar
         super().__init__(example, hyparams)
+        self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')   
 
     def load_data(self):
         path = self.example['path']
@@ -403,6 +444,7 @@ class MPNetRetrieval(RetrievalBase):
             self.add_to_index(
                 item['image_id'], 
                 image_path=self.db_para[str(item['image_id'])], 
+                caption=item['caption'], 
                 is_gold=True
                 )
             
@@ -410,6 +452,7 @@ class MPNetRetrieval(RetrievalBase):
             self.add_to_index(
                 item['image_id'], 
                 image_path=self.db_para[str(item['image_id'])], 
+                caption=item['caption'], 
                 is_gold=False
                 )
             
@@ -417,10 +460,11 @@ class MPNetRetrieval(RetrievalBase):
             self.add_to_index(
                 item['image_id'], 
                 image_path=self.db_para[str(item['image_id'])], 
+                caption=item['caption'], 
                 is_gold=False
                 )
 
-    def add_to_index(self, id, text=None, image_path=None, is_gold=False):
+    def add_to_index(self, id, text=None, image_path=None, is_gold=False, caption=None):
         if text:
             #text_emb = self.embed_text(text)
             text_emb = self.embedding_model.embed_text(text)
@@ -429,9 +473,156 @@ class MPNetRetrieval(RetrievalBase):
         if image_path:
             #image_emb = self.embed_image(image_path)
             #image_emb = self.embedding_model.embed_image(image_path)
+            if self.use_captions:
+                image_path = caption + ' | ' + image_path 
+                image_path = image_path.strip()
             image_emb = self.embedding_model.embed_text(image_path)
             self.embeddings[id] = {'type': 'image', 'embedding': image_emb}
-            self.source_material[id] = {'type': 'image', 'content': image_path, 'is_gold': is_gold}
+            self.source_material[id] = {'type': 'image', 'content': image_path, 'is_gold': is_gold, 'caption': caption}
+
+    # def search(self, query, top_k=None, adjust_mod_bias=False):
+    #     if top_k is None:
+    #         top_k = self.top_k
+
+    #     # Ensure top_k does not exceed the number of items in the corpus
+    #     corpus_size = len(self.embeddings)
+    #     top_k = min(top_k, corpus_size)
+
+
+    #     query_emb = self.embedding_model.embed_text(query) # [1,512]
+    #     corpus_embeddings = torch.stack([self.embeddings[key]['embedding'].squeeze() for key in self.embeddings]) # [N,512]
+
+    #     # Compute dot products (scores) between query and corpus embeddings
+    #     scores = torch.matmul(corpus_embeddings, query_emb.T).squeeze()
+
+    #     if self.adjust_mod_bias:
+    #         scores = self.adjust_scores_by_modality(scores, self.adjust_mod_bias)
+
+    #     scores = self.normalize_scores(scores)
+
+    #     # Get top-k results based on scores
+    #     top_results_indices = torch.topk(scores, top_k).indices
+
+    #     guids = list(self.source_material.keys())
+    #     input_texts = [
+    #         [query, self.source_material[guids[idx.item()]]['content']] for idx in top_results_indices
+    #     ]
+    #     #input_texts = [query] + [self.source_material[key]['content'] for key in self.source_material]
+
+    #     cross_scores = self.cross_encoder.predict(input_texts, apply_softmax=True)
+
+    #     import numpy as np
+
+        
+
+    #     rerank = 4
+    #     # Sort the scores in decreasing order
+    #     sim_scores_argsort = list(reversed(np.argsort(cross_scores)))[:rerank]
+
+    #     print("Scores")
+    #     print(scores)
+    #     print("Cross Scores")
+    #     print(cross_scores)
+    #     print("Sim Scores Argsort")
+    #     print(sim_scores_argsort)
+
+
+    #     final_results_indices = [top_results_indices[idx].item() for idx in sim_scores_argsort]
+
+    #     search_results = [{'corpus_id': idx, 'score': scores[idx]} for idx in final_results_indices]
+
+    #     return search_results
+
+
+
+class Query(MPNetRetrieval):
+
+    # def __init__(self, example, hyparams):
+    #     #super().__init__() # TODO think if parent necessar
+    #     super().__init__(example, hyparams)
+
+    def __init__(self, example, hyparams):
+        #super().__init__() # TODO think if parent necessar
+        super().__init__(example, hyparams)
+        self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')   
+
+    def retrieve(self, state, query):
+        
+        query = self.example['Q']
+        search_results = self.search(query)
+        retrieved_data = self.process_search_results(search_results, query)
+
+        print("#" * 25 + "RETRIEVE" + "#" * 25)
+        print(query)
+        for item1, item2 in zip(retrieved_data['modalities'], retrieved_data['snippets']):
+
+            print(item1, item2, sep='\n')
+            print("#" * 25)
+
+        result = RetrievalResult(
+            state_type="RETRIEVE",
+            context=query,
+            retrieved_snippets=retrieved_data['snippets'],
+            retrieved_sources=retrieved_data['sources'],
+            modalities=retrieved_data['modalities'],
+            relevance_scores=retrieved_data['scores'],
+            is_gold=retrieved_data['is_gold'],
+            is_filtered=retrieved_data['is_filtered']
+        )
+        return result
+
+    def search(self, query, top_k=None, adjust_mod_bias=False):
+        if top_k is None:
+            top_k = self.top_k
+
+        # Ensure top_k does not exceed the number of items in the corpus
+        corpus_size = len(self.embeddings)
+        top_k = min(top_k, corpus_size)
+
+
+        query_emb = self.embedding_model.embed_text(query) # [1,512]
+        corpus_embeddings = torch.stack([self.embeddings[key]['embedding'].squeeze() for key in self.embeddings]) # [N,512]
+
+        # Compute dot products (scores) between query and corpus embeddings
+        scores = torch.matmul(corpus_embeddings, query_emb.T).squeeze()
+
+        if self.adjust_mod_bias:
+            scores = self.adjust_scores_by_modality(scores, self.adjust_mod_bias)
+
+        scores = self.normalize_scores(scores)
+
+        # Get top-k results based on scores
+        top_results_indices = torch.topk(scores, top_k).indices
+
+        guids = list(self.source_material.keys())
+        input_texts = [
+            [query, self.source_material[guids[idx.item()]]['content']] for idx in top_results_indices
+        ]
+        #input_texts = [query] + [self.source_material[key]['content'] for key in self.source_material]
+
+        cross_scores = self.cross_encoder.predict(input_texts, apply_softmax=True)
+
+        import numpy as np
+
+        
+
+        rerank = 4
+        # Sort the scores in decreasing order
+        sim_scores_argsort = list(reversed(np.argsort(cross_scores)))[:rerank]
+
+        print("Scores")
+        print(scores)
+        print("Cross Scores")
+        print(cross_scores)
+        print("Sim Scores Argsort")
+        print(sim_scores_argsort)
+
+
+        final_results_indices = [top_results_indices[idx].item() for idx in sim_scores_argsort]
+
+        search_results = [{'corpus_id': idx, 'score': scores[idx]} for idx in final_results_indices]
+
+        return search_results
 
 
 class DPRRetrieval(RetrievalBase):
@@ -661,6 +852,7 @@ class RetrievalResult(NamedTuple):
     modalities: List[str] # TODO new 
     relevance_scores: List[float]
     is_gold: List[bool] 
+    is_filtered: List[bool] 
 
 
 
