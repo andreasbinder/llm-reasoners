@@ -11,12 +11,133 @@ from reasoners import LanguageModel, Reasoner, SearchAlgorithm
 from reasoners.algorithm import MCTS, MCTSNode, MCTSAggregation
 
 from world_model import WebQAWorldModel, GSM8kState, WebQAAction
-from search_config import GSM8kConfig
+from search_config import WebQAConfig
 import utils
+
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
+
 
 import wandb
 wandb.init()
 
+def footprint(base_model, caption_model):
+    print("#" * 25 + "Footprint" + "#" * 25)
+    # Footprints
+    # Base Model
+    print("Base Model Footprint")
+    try:
+        base_model_footprint = base_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+        print(base_model_footprint)
+    except:
+        print("No base model footprint")
+        
+    print("Caption Model Footprint")
+    try:
+        caption_model_footprint = caption_model.model.get_memory_footprint() / 1024 / 1024 / 1024
+        print(caption_model_footprint)
+    except:
+        print("No caption_model footprint")
+
+    try:
+        print("Allocated Memory")
+        import torch
+        print(torch.cuda.memory_allocated())
+        print(torch.cuda.max_memory_allocated())
+    except:
+        pass
+    
+    print("#" * 25 + "" + "#" * 25)
+
+def load_embedding_model(model_type, checkpoint):
+    if model_type == 'mpnet':
+        from models.mpnet_model import MPNetEmbedder
+        return MPNetEmbedder(checkpoint)
+    elif model_type == 'clip':
+        from models.clip_model import CLIP
+        return CLIP(checkpoint, checkpoint)
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+def load_caption_model(model_path, model_base, load_8bit):
+    from models.llava_model import LLAVAModel
+    return LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+
+# TODO remove eventually
+def decompose_test(config, example, base_model, temperature):
+            
+        decompose_prompt = config["evaluation"]["prompts"]["decompose"].format(
+            Q=example["Q"],
+        )
+        print(decompose_prompt)
+        decompose = base_model.generate([decompose_prompt] * 5,
+                                                hide_input=True,
+                                                do_sample=True,
+                                                temperature=temperature,
+                                                min_new_tokens=3,
+                                                eos_token_id='\n').text
+
+        print("Start Decompose")
+        print('\n'.join(decompose))
+        for i, sub in enumerate(decompose):
+            print(f"Sub {i}: {sub.strip()}")
+        print("End Decompose")
+        ##########################################################################
+
+def iterative_decompose_test(config, example, base_model, temperature):
+            
+        decompose_prompt = config["evaluation"]["prompts"]["iterative_decompose"].format(
+            Q=example["Q"],
+        )
+        n = 3
+        #Question 3.1:
+        print(decompose_prompt)
+        print("Start Decompose")
+        for i in range(1, n+1):
+            decompose_prompt += "Question 3.{i}:"
+            sub = base_model.generate([decompose_prompt],
+                                                    hide_input=True,
+                                                    do_sample=True,
+                                                    temperature=temperature,
+                                                    min_new_tokens=3,
+                                                    eos_token_id='\n').text[0]
+            print(f"Sub {i}: {sub.strip()}")
+            decompose_prompt += sub.strip()
+
+
+        # print('\n'.join(decompose))
+        # for i, sub in enumerate(decompose):
+        #     print(f"Sub {i}: {sub.strip()}")
+        print("End Decompose")
+        ##########################################################################
+
+def eval_val(path_to_webqa, log_dir, dataset):
+    from pathlib import Path
+    with open(Path(path_to_webqa), 'r') as file:
+        webqa_data = json.load(file)
+
+    url = "http://127.0.0.1:8000/evaluate"
+
+    data_to_send = {
+        "data": dataset
+    }
+
+    # Convert your data to JSON
+    data_json = json.dumps(data_to_send)
+    import requests
+    # Send POST request
+    response = requests.post(url, data=data_json)
+
+    #print(response.json())
+    payload = response.json()
+    metrics = payload["metrics"]
+    #wandb.summary.update({"Retrieval":f1_score, **metrics})
+    pp.pprint(metrics)
+    wandb.summary.update({**metrics})
+
+    updated_dataset = payload["updated_data"]
+    with open(os.path.join(log_dir, f'webqa-evaluated.json'), 'w') as json_file:
+        json.dump(updated_dataset, json_file, indent=4)
 
 
 def log_hyparams_with_path(json_data, path=[]):
@@ -46,11 +167,12 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
             "question": x.state[-1].main_question, 
             "answer": x.state[-1].main_answer
             }
-    elif x.state[-1].state_type == "RETRIEVE":
+    elif x.state[-1].state_type == "RETRIEVE" or x.state[-1].state_type == "ASPECT":
         #, "retrieved_snippets": x.state[-1].retrieved_snippets
         return {
             "context": x.state[-1].context,
-            
+            "retrieved_snippets": x.state[-1].retrieved_snippets,
+            "is_filtered": x.state[-1].is_filtered,
             #"snippet_id": [snippet_id.split("_")[-1] for snippet_id in x.state[-1].retrieved_sources],
             #"snippet_id": x.state[-1].retrieved_sources,
             "source_id": x.state[-1].retrieved_sources,
@@ -59,11 +181,22 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
             "is_gold": x.state[-1].is_gold, 
             "relevance_scores": [f'{relevance_score:.3f}'  for relevance_score in x.state[-1].relevance_scores],
             } 
+    
     elif x.state[-1].state_type == "HYPOTHESIS":
         #, "retrieved_snippets": x.state[-1].retrieved_snippets
         return {
             "proposition": x.state[-1].proposition,    
             "comment": x.state[-1].comment    
+            } 
+    elif x.state[-1].state_type == "REFINE":
+        #, "retrieved_snippets": x.state[-1].retrieved_snippets
+        return {        
+            "state_indices": x.state[-1].state_indices,    
+            "snippet_indices": x.state[-1].snippet_indices,    
+            "snippets": x.state[-1].snippets,
+            "sources": x.state[-1].sources,
+            "scores": [f'{relevance_score:.3f}'  for relevance_score in x.state[-1].scores]   
+            
             } 
     elif x.state[-1].state_type == "INVALID":
         return {
@@ -72,8 +205,7 @@ def node_visualizer(x: MCTSNode[GSM8kState, WebQAAction]):
 
 
 def rap_webqa(base_model: LanguageModel,
-              interactive_prompt: dict,
-              useful_prompt: dict,
+              config: dict,
               search_algo: Type[SearchAlgorithm] = MCTS,
               resume: int = 0,
               n_action: int = 4,
@@ -106,92 +238,82 @@ def rap_webqa(base_model: LanguageModel,
         with open(os.path.join(log_dir, 'args.txt'), 'w') as f:
             print(sys.argv, file=f)
 
+        with open(os.path.join(log_dir, f'config.json'), 'w') as json_file:
+            json.dump(config, json_file, indent=4)    
+
+
     search_algo_params |= {'cum_reward': cum_reward, 'calc_q': calc_q, 'disable_tqdm': disable_tqdm,
                            'output_trace_in_each_iter': output_trace_in_each_iter}
-    world_model = WebQAWorldModel(base_model=base_model, prompt=interactive_prompt,
+    world_model = WebQAWorldModel(base_model=base_model, prompt=config,
                                   n_confidence=n_confidence, batch_size=batch_size, temperature=temperature,
                                   early_stop_base=early_stop_base, early_stop_threshold=early_stop_threshold)
-    config = GSM8kConfig(base_model=base_model, prompt=interactive_prompt, useful_prompt=useful_prompt,
+    search_config = WebQAConfig(base_model=base_model, prompt=config, 
                          n_actions=n_action, batch_size=batch_size, temperature=temperature,
                          reward_alpha=reward_alpha, reward_confidence_default=reward_confidence_default,
                          force_terminating_on_depth_limit=force_terminating_on_depth_limit, depth_limit=depth_limit)
     search_algo = search_algo(**search_algo_params)
-    reasoner = Reasoner(world_model=world_model, search_config=config, search_algo=search_algo)
+    reasoner = Reasoner(world_model=world_model, search_config=search_config, search_algo=search_algo)
 
-    if aggregate:
-        aggregator = MCTSAggregation(utils.retrieve_answer, weight_policy='edge_inverse_depth')
-    else:
-        aggregator = None
+    # TODO aggregator could make sense with paraphrasing
+    # if aggregate:
+    #     aggregator = MCTSAggregation(utils.retrieve_answer, weight_policy='edge_inverse_depth')
+    # else:
+    #     aggregator = None
 
     dataset = utils.load_webqa_dataset(path_to_webqa, split, resume)
     
-    retrieve_hyparams = interactive_prompt["actions"]["RETRIEVE"]["hyparams"]
-    checkpoint_embedding_model = retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2")
-    from models.mpnet_model import MPNetEmbedder
-    #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
-    embedding_model = MPNetEmbedder(checkpoint_embedding_model)
+    # retrieve_hyparams = config["actions"]["RETRIEVE"]["hyparams"]
+    # checkpoint_embedding_model = retrieve_hyparams["embedding_model"].get("checkpoint", "sentence-transformers/all-mpnet-base-v2")
+    # from models.mpnet_model import MPNetEmbedder
+    # #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+    # embedding_model = MPNetEmbedder(checkpoint_embedding_model)
 
-    #from models.clip_model import CLIP
-    #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
-    #embedding_model = CLIP("laion/CLIP-ViT-H-14-laion2B-s32B-b79K", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
+    # #from models.clip_model import CLIP
+    # #checkpoint_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+    # #embedding_model = CLIP("laion/CLIP-ViT-H-14-laion2B-s32B-b79K", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 
-    if retrieve_hyparams['use_caption_model']:
+    # if retrieve_hyparams['use_caption_model']:
 
-        from models.llava_model import LLAVAModel
-        #model_path = "liuhaotian/llava-v1.5-13b"
-        #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
+    #     from models.llava_model import LLAVAModel
+    #     #model_path = "liuhaotian/llava-v1.5-13b"
+    #     #checkpoint_embedding_model = retrieve_hyparams["caption_model"].get("model_path", "sentence-transformers/all-mpnet-base-v2")
         
-        # model_path = "liuhaotian/llava-v1.5-7b"
-        # model_base = None
-        # load_8bit = True
+    #     # model_path = "liuhaotian/llava-v1.5-7b"
+    #     # model_base = None
+    #     # load_8bit = True
 
-        model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
+    #     model_path = retrieve_hyparams["caption_model"].get("model_path", "liuhaotian/llava-v1.5-7b")
+    #     model_base = retrieve_hyparams["caption_model"].get("model_base", None)
+    #     load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
+    #     caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+    # else:
+    #     caption_model = None
+
+    retrieve_hyparams = config["actions"]["RETRIEVE"]["hyparams"]
+
+    # Load embedding model
+    embedding_model_type = retrieve_hyparams["embedding_model"].get("type", "mpnet")
+    checkpoint_embedding_model = retrieve_hyparams["embedding_model"].get("checkpoint", "default-checkpoint-for-embedding-model")
+    embedding_model = load_embedding_model(embedding_model_type, checkpoint_embedding_model)
+
+    # Load caption model if needed
+    if retrieve_hyparams['use_caption_model']:
+        model_path = retrieve_hyparams["caption_model"].get("model_path", "default-model-path")
         model_base = retrieve_hyparams["caption_model"].get("model_base", None)
         load_8bit = retrieve_hyparams["caption_model"].get("load_8bit", True)
-        caption_model = LLAVAModel(model_path, model_base, load_8bit=load_8bit)
+        caption_model = load_caption_model(model_path, model_base, load_8bit)
     else:
         caption_model = None
 
-    # from models.llava_model_hf import LLAVAModel
-    # caption_model = LLAVAModel()
-    #caption_model = ''
-    ###########################################################################
     # TODO log hyparams to out file
-    log_hyparams_with_path(interactive_prompt)
+    log_hyparams_with_path(config)
 
 
-    # def footprint(base_model, caption_model):
-    #     print("#" * 25 + "Footprint" + "#" * 25)
-    #     # Footprints
-    #     # Base Model
-    #     print("Base Model Footprint")
-    #     try:
-    #         base_model_footprint = base_model.model.get_memory_footprint() / 1024 / 1024 / 1024
-    #         print(base_model_footprint)
-    #     except:
-    #         print("No base model footprint")
-            
-    #     print("Caption Model Footprint")
-    #     try:
-    #         caption_model_footprint = caption_model.model.get_memory_footprint() / 1024 / 1024 / 1024
-    #         print(caption_model_footprint)
-    #     except:
-    #         print("No caption_model footprint")
-
-    #     try:
-    #         print("Allocated Memory")
-    #         import torch
-    #         print(torch.cuda.memory_allocated())
-    #         print(torch.cuda.max_memory_allocated())
-    #     except:
-    #         pass
-        
-    #     print("#" * 25 + "" + "#" * 25)
+ 
     # footprint(base_model, caption_model)
 
-    if len(dataset) < 3:
-        print("dataset: ", dataset)
-
+    from utils import Evaluation
+    evaluation = Evaluation()
     
     all_actions = []
     for key in tqdm(dataset, total=len(dataset),
@@ -199,15 +321,17 @@ def rap_webqa(base_model: LanguageModel,
         
         example = dataset[key]
         print("#" * 25 + "Case Number: "+ str(example["Guid"]) + "#" * 25)
-        ###########################################################################
 
         example["embedding_model"] = embedding_model
         example["caption_model"] = caption_model
 
         ###########################################################################
+        # iterative_decompose_test(config, example, base_model, temperature)
+        # sys.exit()
 
 
         algo_output = reasoner(example)
+        evaluation(algo_output)
 
         ####  retrieve output
         predicted_sources = [
@@ -216,6 +340,16 @@ def rap_webqa(base_model: LanguageModel,
             for source in winning_state.retrieved_sources
         ]
         dataset[key]['sources'] = predicted_sources
+
+        filtered_sources = [
+            source
+            for winning_state in algo_output.terminal_state if winning_state.state_type == "RETRIEVE"
+            for source, is_filtered in zip(winning_state.retrieved_sources, winning_state.is_filtered)
+            if not is_filtered  # Only include the source if it is not filtered
+        ]
+
+        dataset[key]['filtered_sources'] = filtered_sources
+
         #x.state[-1].state_type == "RETRIEVE"
         ####
 
@@ -226,13 +360,6 @@ def rap_webqa(base_model: LanguageModel,
             winning_state.state_type for winning_state in algo_output.terminal_state
         )
         
-        # print("#" * 25 + "Terminal State Start" + "#" * 25)
-        # print(algo_output.terminal_state)
-        # print("#" * 25 + "Terminal State End" + "#" * 25)
-
-        # print("#" * 25 + "Trace State Start" + "#" * 25)
-        # print(algo_output.trace)
-        # print("#" * 25 + "trace State End" + "#" * 25)
 
         print(f'Prediction: {answer}')
         print(f'Answer: {A}')
@@ -242,9 +369,7 @@ def rap_webqa(base_model: LanguageModel,
         dataset[key]['answer'] = answer[0]
         dataset[key].pop('path', None)
 
-        dataset[key].pop('instruct_blip', None)
-        dataset[key].pop('clip_processor', None)
-        dataset[key].pop('clip_model', None)
+        
         dataset[key].pop('embedding_model', None)
         dataset[key].pop('caption_model', None)
 
@@ -255,7 +380,7 @@ def rap_webqa(base_model: LanguageModel,
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
                 print(log_str, file=f)
-              
+
             with open(os.path.join(log_dir, 'algo_output', f'{example["Guid"]}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
             if isinstance(search_algo, MCTS):
@@ -282,49 +407,53 @@ def rap_webqa(base_model: LanguageModel,
         "Action Average": avg_all_actions,
     })
 
+    mod_dist = evaluation.get_modality()
+    wandb.summary.update(mod_dist)
+    print("Modality Distribution: ", mod_dist)
+
     # function = config.action_selection
     # print("Average time:", function.avg_time())
 
     # TODO local eval
     #if split == "test":
-    if interactive_prompt["general"]["eval-test"]:
+    if config["general"]["eval-test"]:
         from eval import evaluate
         output = evaluate(dataset, "test")['submission_result']
 
         wandb.summary.update(output)
 
-    if interactive_prompt["general"]["eval-val"]:
+    if config["general"]["eval-val"]:
 
-        from pathlib import Path
-        with open(Path(path_to_webqa), 'r') as file:
-            webqa_data = json.load(file)
+        # from pathlib import Path
+        # with open(Path(path_to_webqa), 'r') as file:
+        #     webqa_data = json.load(file)
 
-        url = "http://127.0.0.1:8000/evaluate"
+        # url = "http://127.0.0.1:8000/evaluate"
 
-        data_to_send = {
-            "data": dataset
-        }
+        # data_to_send = {
+        #     "data": dataset
+        # }
 
-        # Convert your data to JSON
-        data_json = json.dumps(data_to_send)
-        import requests
-        # Send POST request
-        response = requests.post(url, data=data_json)
+        # # Convert your data to JSON
+        # data_json = json.dumps(data_to_send)
+        # import requests
+        # # Send POST request
+        # response = requests.post(url, data=data_json)
 
-        #print(response.json())
-        payload = response.json()
-        metrics = payload["metrics"]
-        #wandb.summary.update({"Retrieval":f1_score, **metrics})
-        wandb.summary.update({**metrics})
+        # #print(response.json())
+        # payload = response.json()
+        # metrics = payload["metrics"]
+        # #wandb.summary.update({"Retrieval":f1_score, **metrics})
+        # wandb.summary.update({**metrics})
 
-        updated_dataset = payload["updated_data"]
-        with open(os.path.join(log_dir, f'webqa-evaluated.json'), 'w') as json_file:
-            json.dump(updated_dataset, json_file, indent=4)
+        # updated_dataset = payload["updated_data"]
+        # with open(os.path.join(log_dir, f'webqa-evaluated.json'), 'w') as json_file:
+        #     json.dump(updated_dataset, json_file, indent=4)
 
-
+        eval_val(path_to_webqa, log_dir, dataset)
         
 
-
+    
 
 if __name__ == '__main__':
     import os
@@ -355,19 +484,19 @@ if __name__ == '__main__':
              exllama_lora_dir: Optional[str] = None,
              exllama_mem_map: Optional[str] = None,
              batch_size: int = 1,
-             interactive_prompt: str = 'examples/rap_gsm8k/prompts/interactive_examples.json',
-             useful_prompt: str = 'examples/rap_gsm8k/prompts/useful_examples.json',
+             config: str = 'examples/rap_gsm8k/prompts/interactive_examples.json',
+             
              disable_log: bool = False,
              disable_tqdm: bool = False,
              seed : int = None,
              **kwargs):
-        with open(interactive_prompt) as f:
-            interactive_prompt = json.load(f)
+        with open(config) as f:
+            config = json.load(f)
 
             
 
-        with open(useful_prompt) as f:
-            useful_prompt = json.load(f)
+        # with open(useful_prompt) as f:
+        #     useful_prompt = json.load(f)
         if base_lm in ['llama', 'llama2']:
             import torch
             import torch.backends.cudnn
@@ -399,7 +528,7 @@ if __name__ == '__main__':
             "CLI": locals()
         })
         # wandb.config.update({
-        #     "Configs & Prompts": interactive_prompt
+        #     "Configs & Prompts": config
         # })
         if seed is not None:
             
@@ -441,13 +570,13 @@ if __name__ == '__main__':
             base_model = GPTCompletionModel(model=exllama_model_dir, temperature=0.7, max_tokens=1000)
         elif base_lm == "fake-llm":
             from reasoners.lm import FakeLLM
-            base_model = FakeLLM()
+            base_model = FakeLLM(config=config)
         else:
             assert False, f'cannot resolve {base_lm=}'
 
         rap_webqa(base_model=base_model,
-                  interactive_prompt=interactive_prompt,
-                  useful_prompt=useful_prompt,
+                  config=config,
+                  
                   batch_size=batch_size,
                   disable_log=disable_log or local_rank != 0,
                   disable_tqdm=disable_tqdm or local_rank != 0,
