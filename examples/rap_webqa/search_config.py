@@ -48,11 +48,39 @@ class GSM8kUsefulPrompt(TypedDict):
     useful_prefix: str
 
 
-class GSM8kConfig(SearchConfig):
+def iterative_decompose(config, example, base_model, temperature):
+            
+    decompose_prompt = config["evaluation"]["prompts"]["iterative_decompose"].format(
+        Q=example["Q"],
+    )
+    n = config["general"]["iterative_decompose_max_steps"]
+    
+    print(decompose_prompt)
+    print("Start Decompose")
+    subs = []
+    for i in range(1, n+1):
+        decompose_prompt += "Question 3.{i}:"
+        sub = base_model.generate([decompose_prompt],
+                                                hide_input=True,
+                                                do_sample=True,
+                                                temperature=temperature,
+                                                min_new_tokens=3,
+                                                eos_token_id='\n').text[0]
+        print(f"Sub {i}: {sub.strip()}")
+        subs.append(sub.strip())
+        decompose_prompt += sub.strip()
+
+
+    if config["general"]["use_main_question"]:
+        subs = [example["Q"]] + subs
+        # 
+    print("End Decompose")
+    return subs
+
+class WebQAConfig(SearchConfig):
     def __init__(self,
                  base_model: LanguageModel,
                  prompt: dict,
-                 useful_prompt: dict,
                  n_actions=4,
                  batch_size=1,
                  temperature=0.8,
@@ -66,7 +94,7 @@ class GSM8kConfig(SearchConfig):
         self.base_model = base_model
         self.example = ''
         self.prompt: GSM8kPrompt = prompt
-        self.useful_prompt: GSM8kUsefulPrompt = useful_prompt
+        
         self.batch_size = batch_size
         self.temperature = temperature
         self.n_actions = n_actions
@@ -85,6 +113,8 @@ class GSM8kConfig(SearchConfig):
         self.general_hyparams = self.prompt["general"]["hyparams"]
         self.min_new_tokens = self.general_hyparams.get("min_new_tokens", 3)
 
+        self.subs = []
+
     def update_example(self, example: str) -> None:
         super().update_example(example)
         # TODO
@@ -92,6 +122,9 @@ class GSM8kConfig(SearchConfig):
             # self.overall_question = re.match('.*((Calculate|calculate|how|How|what|What|Find|find|True or false).*)$',
             #                                  self.example)[1]
             self.overall_question = self.example
+
+        if self.prompt['general']['use_iterative_decompose']:
+            self.subs = iterative_decompose(self.prompt, self.example, self.base_model, self.temperature)
 
     @time_decorator
     def action_selection(self, state: GSM8kState) -> DecomposeResult:
@@ -200,7 +233,24 @@ class GSM8kConfig(SearchConfig):
 
         question = self.example["Q"]
 
-        available_actions = self.prompt["action_selection"]["available_actions"]
+        # if len(state) == 0 and self.prompt["general"]["answer_limit"]:
+        #     available_actions = ['RETRIEVE']
+        # else:
+        #     available_actions = self.prompt["action_selection"]["available_actions"]
+
+        # if state == []:
+        #     available_actions = ['RETRIEVE']
+        # elif len(state) == 1: 
+        #     available_actions = ['REFINE']
+        # else:
+        #     available_actions = self.prompt["action_selection"]["available_actions"]
+
+        if state == []:
+            available_actions = ['RETRIEVE', 'ANSWER']
+        else:
+            available_actions = self.prompt["action_selection"]["available_actions"]
+
+        #available_actions = self.prompt["action_selection"]["available_actions"]
 
         model_input = utils.action_selection_prompt(self.prompt, question, state, available_actions)
 
@@ -283,6 +333,9 @@ class GSM8kConfig(SearchConfig):
             elif keyword == 'INVALID':
                 #actions += ['INVALID']
                 actions += [('INVALID', 'No valid Keyword generated')]
+            elif keyword == 'REFINE':
+                #actions += ['REFINE' + ': ' + question]
+                actions += [('REFINE', '')]
             else:
                 model_output = self.base_model.generate([prompt],
                                                     hide_input=True,
@@ -326,7 +379,7 @@ class GSM8kConfig(SearchConfig):
 
     def fast_reward(self, state: GSM8kState, action: WebQAAction) -> tuple[float, dict]:
         
-        #model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, action)
+        
         question = self.example["Q"]
         keyword, details = action
 
@@ -334,20 +387,65 @@ class GSM8kConfig(SearchConfig):
         if keyword == 'INVALID':
             return 0, {'r_useful': 0}
 
-        model_input = utils.evaluation_prompt(self.prompt, self.useful_prompt, question , state, action)
+        model_input = utils.evaluation_prompt(self.prompt, question , state, action)
 
         print("#" * 25 + "Evaluation Input" + "#" * 25)
         print(model_input)
 
-        logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
-        probs = np.exp(logits) / np.sum(np.exp(logits))
-        useful_prob = probs[0]
+        # logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
+        # probs = np.exp(logits) / np.sum(np.exp(logits))
+        # useful_prob = probs[0]
+        if self.prompt["general"]["use_ensemble"]:
+            useful_prob = self.ensemble_reward(model_input)
+        elif self.prompt["general"]["use_iterative_decompose"]:
+            useful_prob = self.iterative_decompose_reward(state, action)
+        else:
+            useful_prob = self.single_reward(model_input)
         print("#" * 25 + "Evaluation Output" + "#" * 25)
         print(useful_prob)
 
+        # if len(state) == 0 and keyword == 'ANSWER' and self.prompt["general"]["answer_reward"]:
+        #     useful_prob *= 0.8
 
         fast_reward, _ = self.calculate_reward(useful_prob)
         return fast_reward, {'r_useful': useful_prob}
+
+    def single_reward(self, model_input: str):
+        logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
+        probs = np.exp(logits) / np.sum(np.exp(logits))
+        useful_prob = probs[0]
+        return useful_prob
+    
+    def iterative_decompose_reward(self, state, action):
+        avg_useful_prob = 0
+        print("#" * 25 + "Iterative Reward Start" + "#" * 25)
+        for sub in self.subs:
+            
+            model_input = utils.evaluation_prompt(self.prompt, sub , state, action)
+            logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
+            probs = np.exp(logits) / np.sum(np.exp(logits))
+            useful_prob = probs[0]
+            print(useful_prob)
+
+            avg_useful_prob += useful_prob
+        print("#" * 25 + "Iterative Reward End" + "#" * 25)
+        return avg_useful_prob / self.prompt["general"]["ensemble_size"]
+
+    def ensemble_reward(self, model_input: str):
+        avg_useful_prob = 0
+        print("#" * 25 + "Ensemble Reward Start" + "#" * 25)
+        for _ in range(self.prompt["general"]["ensemble_size"]):
+            logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
+            probs = np.exp(logits) / np.sum(np.exp(logits))
+            useful_prob = probs[0]
+            print(useful_prob)
+
+            avg_useful_prob += useful_prob
+        print("#" * 25 + "Ensemble Reward End" + "#" * 25)
+        # logits = self.base_model.get_next_token_logits(model_input, ["Yes", "No"])[0]
+        # probs = np.exp(logits) / np.sum(np.exp(logits))
+        # useful_prob = probs[0]
+        return avg_useful_prob / self.prompt["general"]["ensemble_size"]
 
     def calculate_reward(self, r_useful, r_conf=None):
         if r_conf is None:
